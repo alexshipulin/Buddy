@@ -1,9 +1,17 @@
 import { DishRecommendation, MenuScanResult } from '../domain/models';
 import { createId } from '../utils/id';
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent';
+const GEMINI_TEXT_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const GEMINI_VISION_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent';
 
-type GeminiRequest = {
+type GeminiTextRequest = {
+  contents: Array<{
+    role?: string;
+    parts: Array<{ text: string }>;
+  }>;
+};
+
+type GeminiVisionRequest = {
   contents: Array<{
     parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }>;
   }>;
@@ -50,7 +58,7 @@ function createMockChatResponse(): string {
   return 'I can help you with meal planning! Add your Gemini API key to enable AI-powered responses.';
 }
 
-async function uriToBase64(uri: string): Promise<string | null> {
+export async function uriToBase64(uri: string): Promise<string | null> {
   if (uri.startsWith('data:')) {
     return uri.split(',')[1] || null;
   }
@@ -74,28 +82,52 @@ async function uriToBase64(uri: string): Promise<string | null> {
   return uri;
 }
 
-async function callGeminiAPI(payload: GeminiRequest): Promise<string> {
+async function callGeminiTextAPI(payload: GeminiTextRequest): Promise<string> {
   const apiKey = getApiKey();
   if (!apiKey) {
     throw new Error('API_KEY_MISSING');
   }
 
-  const url = `${GEMINI_API_URL}?key=${encodeURIComponent(apiKey)}`;
+  const url = `${GEMINI_TEXT_API_URL}?key=${encodeURIComponent(apiKey)}`;
   const response = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
-    const errorData: GeminiResponse = await response.json().catch(() => ({}));
-    throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+    const errText = await response.text();
+    throw new Error(`Gemini error ${response.status}: ${errText}`);
   }
 
   const data: GeminiResponse = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  const text = data?.candidates?.[0]?.content?.parts?.map((p) => p?.text).filter(Boolean).join('') ?? '';
+  if (!text) {
+    throw new Error('Empty response from Gemini');
+  }
+  return text;
+}
+
+async function callGeminiVisionAPI(payload: GeminiVisionRequest): Promise<string> {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    throw new Error('API_KEY_MISSING');
+  }
+
+  const url = `${GEMINI_VISION_API_URL}?key=${encodeURIComponent(apiKey)}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Gemini error ${response.status}: ${errText}`);
+  }
+
+  const data: GeminiResponse = await response.json();
+  const text = data?.candidates?.[0]?.content?.parts?.map((p) => p?.text).filter(Boolean).join('') ?? '';
   if (!text) {
     throw new Error('Empty response from Gemini');
   }
@@ -120,8 +152,7 @@ function parseMenuAnalysis(text: string, images: string[]): MenuScanResult {
   }
 }
 
-export async function analyzeMenu(input: string | string[]): Promise<MenuScanResult> {
-  const images = Array.isArray(input) ? input : [input];
+export async function analyzeMenu(input: string | string[] | { base64: string; mimeType: string }): Promise<MenuScanResult> {
   const apiKey = getApiKey();
 
   if (!apiKey) {
@@ -129,14 +160,25 @@ export async function analyzeMenu(input: string | string[]): Promise<MenuScanRes
   }
 
   try {
-    const firstImage = images[0];
-    if (!firstImage) {
-      return createMockMenuResult();
-    }
+    let base64Image: string | null = null;
+    let mimeType = 'image/jpeg';
+    let imageUris: string[] = [];
 
-    const base64Image = await uriToBase64(firstImage);
-    if (!base64Image) {
-      return createMockMenuResult();
+    if (typeof input === 'object' && 'base64' in input) {
+      base64Image = input.base64;
+      mimeType = input.mimeType;
+      imageUris = [];
+    } else {
+      const images = Array.isArray(input) ? input : [input];
+      imageUris = images;
+      const firstImage = images[0];
+      if (!firstImage) {
+        return createMockMenuResult();
+      }
+      base64Image = await uriToBase64(firstImage);
+      if (!base64Image) {
+        return createMockMenuResult();
+      }
     }
 
     const prompt = `Analyze this menu image and return JSON with:
@@ -147,7 +189,7 @@ export async function analyzeMenu(input: string | string[]): Promise<MenuScanRes
   "summaryText": "..."
 }`;
 
-    const payload: GeminiRequest = {
+    const payload: GeminiVisionRequest = {
       contents: [
         {
           parts: [
@@ -163,8 +205,8 @@ export async function analyzeMenu(input: string | string[]): Promise<MenuScanRes
       ],
     };
 
-    const responseText = await callGeminiAPI(payload);
-    return parseMenuAnalysis(responseText, images);
+    const responseText = await callGeminiVisionAPI(payload);
+    return parseMenuAnalysis(responseText, imageUris);
   } catch (error) {
     if (error instanceof Error && error.message === 'API_KEY_MISSING') {
       return createMockMenuResult();
@@ -194,7 +236,7 @@ export async function analyzeMealPhoto(imageUri: string): Promise<{ macros: { ca
 
     const prompt = 'Analyze this meal photo and return JSON: {"caloriesKcal": number, "proteinG": number, "carbsG": number, "fatG": number, "description": "..."}';
 
-    const payload: GeminiRequest = {
+    const payload: GeminiVisionRequest = {
       contents: [
         {
           parts: [
@@ -210,7 +252,7 @@ export async function analyzeMealPhoto(imageUri: string): Promise<{ macros: { ca
       ],
     };
 
-    const responseText = await callGeminiAPI(payload);
+    const responseText = await callGeminiVisionAPI(payload);
     const parsed = JSON.parse(responseText);
     return {
       macros: {
@@ -240,16 +282,25 @@ export async function askBuddy(message: string, context?: any): Promise<string> 
     const contextText = context ? `Context: ${JSON.stringify(context)}\n\n` : '';
     const prompt = `${contextText}User question: ${message}\n\nProvide a helpful, concise response about nutrition and meal planning.`;
 
-    const payload: GeminiRequest = {
-      contents: [
-        {
-          parts: [{ text: prompt }],
-        },
-      ],
+    const payload: GeminiTextRequest = {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
     };
 
-    return await callGeminiAPI(payload);
+    return await callGeminiTextAPI(payload);
   } catch {
     return createMockChatResponse();
   }
+}
+
+export async function geminiTextTest(prompt: string): Promise<string> {
+  const key = getApiKey();
+  if (!key) {
+    throw new Error('Missing EXPO_PUBLIC_GEMINI_API_KEY');
+  }
+
+  const payload: GeminiTextRequest = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+  };
+
+  return await callGeminiTextAPI(payload);
 }
