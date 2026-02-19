@@ -28,15 +28,15 @@ export function AppNavigator(): React.JSX.Element {
       }}
     >
       <Stack.Screen name="Welcome" component={WelcomeScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="GoalSelection" component={GoalSelectionScreen} options={{ title: 'Goal' }} />
-      <Stack.Screen name="DietaryProfile" component={DietaryProfileScreen} options={{ title: 'Dietary profile' }} />
-      <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Screen name="GoalSelection" component={GoalSelectionScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="DietaryProfile" component={DietaryProfileScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
       <Stack.Screen name="ScanMenu" component={ScanMenuScreen} options={{ title: 'Scan menu', headerShown: false }} />
-      <Stack.Screen name="MenuResults" component={MenuResultsScreen} options={{ title: 'Top picks' }} />
-      <Stack.Screen name="TrackMeal" component={TrackMealScreen} options={{ title: 'Track meal' }} />
+      <Stack.Screen name="MenuResults" component={MenuResultsScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="TrackMeal" component={TrackMealScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Chat" component={ChatScreen} options={{ title: 'Chat with Buddy' }} />
       <Stack.Screen name="Paywall" component={PaywallScreen} options={{ title: 'Premium', presentation: 'modal' }} />
-      <Stack.Screen name="Profile" component={ProfileScreen} />
+      <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
       <Stack.Screen name="SignInNudge" component={SignInNudgeScreen} options={{ title: 'Sign in', presentation: 'modal' }} />
     </Stack.Navigator>
   );
