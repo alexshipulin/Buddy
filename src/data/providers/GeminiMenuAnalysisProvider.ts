@@ -6,9 +6,11 @@ import { MenuAnalysisProvider } from './MenuAnalysisProvider';
 import { MockMenuAnalysisProvider } from './MockMenuAnalysisProvider';
 
 function detectMimeType(uri: string): string {
-  if (uri.endsWith('.png')) return 'image/png';
-  if (uri.endsWith('.jpg') || uri.endsWith('.jpeg')) return 'image/jpeg';
-  if (uri.endsWith('.webp')) return 'image/webp';
+  const normalizedUri = uri.toLowerCase();
+  if (normalizedUri.endsWith('.png')) return 'image/png';
+  if (normalizedUri.endsWith('.jpg') || normalizedUri.endsWith('.jpeg')) return 'image/jpeg';
+  if (normalizedUri.endsWith('.webp')) return 'image/webp';
+  if (normalizedUri.endsWith('.heic') || normalizedUri.endsWith('.heif')) return 'image/heic';
   return 'image/jpeg';
 }
 
@@ -50,6 +52,7 @@ export class GeminiMenuAnalysisProvider implements MenuAnalysisProvider {
         disclaimerFlag: true,
       };
     } catch (error) {
+      console.warn('Gemini menu analysis failed, using mock fallback.', error instanceof Error ? error.message : String(error));
       return this.mockProvider.analyzeMenu(images, user);
     }
   }
