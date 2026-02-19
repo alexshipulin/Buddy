@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { RootStackParamList } from '../app/navigation/types';
 import { AppScreen } from '../components/AppScreen';
 import { Card } from '../components/Card';
@@ -22,8 +22,8 @@ export function PaywallScreen({ navigation, route }: Props): React.JSX.Element {
     navigation.goBack();
   };
   return (
-    <AppScreen>
-      <ScrollView contentContainerStyle={styles.wrap}>
+    <AppScreen scroll>
+      <View style={styles.wrap}>
         <View style={styles.headerRow}>
           <Pressable onPress={() => navigation.goBack()}><Text style={styles.headerAction}>Close</Text></Pressable>
           <Pressable><Text style={styles.headerAction}>Restore</Text></Pressable>
@@ -41,9 +41,9 @@ export function PaywallScreen({ navigation, route }: Props): React.JSX.Element {
           <Text style={styles.planPrice}>$39.99/year</Text>
           <Text style={styles.planHint}>Cancel anytime. Prices are mock for MVP.</Text>
         </Card>
-        <PrimaryButton title={loading ? 'Activating...' : 'Start Premium'} onPress={() => void onStartPremium()} disabled={loading} />
+        <PrimaryButton title="Start Premium" loading={loading} onPress={() => void onStartPremium()} disabled={loading} />
         <SecondaryButton title="Not now" onPress={() => navigation.goBack()} />
-      </ScrollView>
+      </View>
     </AppScreen>
   );
 }

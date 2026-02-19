@@ -16,7 +16,16 @@ This project uses Google Gemini API securely via environment variables.
    EXPO_PUBLIC_GEMINI_API_KEY=your_actual_api_key_here
    ```
 
-3. **Restart Expo development server:**
+3. **Optional: Enable test mode (removes Premium restrictions and scan limits):**
+   ```
+   EXPO_PUBLIC_TEST_MODE=true
+   ```
+   In test mode:
+   - Chat works without Premium
+   - Menu scan has no daily limit
+   - Paywall screens remain accessible but don't block functionality
+
+4. **Restart Expo development server:**
    ```bash
    npm start
    ```

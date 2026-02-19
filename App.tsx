@@ -4,8 +4,9 @@ import { createNavigationContainerRef, DefaultTheme, NavigationContainer } from 
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppNavigator } from './src/app/navigation/AppNavigator';
 import { RootStackParamList } from './src/app/navigation/types';
+import { seedMockDataIfNeeded } from './src/data/seed/seedMockData';
 import { appTheme } from './src/design/theme';
-import { appPrefsRepo, userRepo } from './src/services/container';
+import { appPrefsRepo, chatRepo, historyRepo, trialRepo, userRepo } from './src/services/container';
 
 const navTheme = {
   ...DefaultTheme,
@@ -21,11 +22,20 @@ const navTheme = {
 const navRef = createNavigationContainerRef<RootStackParamList>();
 
 export default function App(): React.JSX.Element {
+  const [isBootstrapped, setIsBootstrapped] = React.useState(false);
   const [isNavReady, setIsNavReady] = React.useState(false);
 
   React.useEffect(() => {
+    const bootstrap = async (): Promise<void> => {
+      await seedMockDataIfNeeded({ userRepo, historyRepo, trialRepo, chatRepo });
+      setIsBootstrapped(true);
+    };
+    void bootstrap();
+  }, []);
+
+  React.useEffect(() => {
     const runLaunchChecks = async (): Promise<void> => {
-      if (!isNavReady || !navRef.isReady()) return;
+      if (!isBootstrapped || !isNavReady || !navRef.isReady()) return;
       const launchCount = await appPrefsRepo.incrementLaunchCount();
       const auth = await userRepo.getAuthState();
       const prefs = await appPrefsRepo.getPrefs();
@@ -34,13 +44,13 @@ export default function App(): React.JSX.Element {
       }
     };
     void runLaunchChecks();
-  }, [isNavReady]);
+  }, [isBootstrapped, isNavReady]);
 
   return (
     <SafeAreaProvider>
       <NavigationContainer ref={navRef} theme={navTheme} onReady={() => setIsNavReady(true)}>
         <StatusBar style="dark" />
-        <AppNavigator />
+        {isBootstrapped ? <AppNavigator /> : null}
       </NavigationContainer>
     </SafeAreaProvider>
   );

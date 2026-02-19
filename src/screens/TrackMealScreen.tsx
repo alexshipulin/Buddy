@@ -8,6 +8,8 @@ import { Card } from '../components/Card';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { SecondaryButton } from '../components/SecondaryButton';
 import { appTheme } from '../design/theme';
+import { TEST_MODE } from '../config/flags';
+import { analyzeMealPhoto } from '../services/aiService';
 import { addMealUseCase } from '../services/addMealUseCase';
 import { chatRepo, historyRepo } from '../services/container';
 import { createId } from '../utils/id';
@@ -28,6 +30,7 @@ export function TrackMealScreen({ navigation, route }: Props): React.JSX.Element
   const [titleInput, setTitleInput] = React.useState('');
   const [descriptionInput, setDescriptionInput] = React.useState('');
   const [imageUri, setImageUri] = React.useState<string | undefined>();
+  const [saving, setSaving] = React.useState(false);
   React.useEffect(() => { void (async () => {
     if (!route.params?.mealId) return;
     const meal = await historyRepo.getMealById(route.params.mealId);
@@ -36,23 +39,43 @@ export function TrackMealScreen({ navigation, route }: Props): React.JSX.Element
     setMealInfo(`${meal.macros.caloriesKcal} kcal | P ${meal.macros.proteinG}g | C ${meal.macros.carbsG}g | F ${meal.macros.fatG}g`);
   })(); }, [route.params?.mealId]);
   const saveMeal = async (source: 'photo' | 'text'): Promise<void> => {
+    setSaving(true);
     const title = titleInput.trim() || 'Meal';
     const mealId = createId('meal');
-    await addMealUseCase({
-      id: mealId,
-      createdAt: new Date().toISOString(),
-      title,
-      source,
-      imageUri,
-      notes: source === 'text' ? descriptionInput.trim() : undefined,
-      macros: toStableMacros(`${title}-${descriptionInput}-${source}`),
-    }, { historyRepo });
-    await chatRepo.addSystemMessageIfMissing(`meal_${mealId}`, `Logged: ${title}. Today updated.`);
-    Alert.alert('Saved');
-    setTitleInput(''); setDescriptionInput(''); setImageUri(undefined);
+    let macros = toStableMacros(`${title}-${descriptionInput}-${source}`);
+    let notes = source === 'text' ? descriptionInput.trim() : undefined;
+
+    if (source === 'photo' && imageUri && TEST_MODE) {
+      try {
+        const analysis = await analyzeMealPhoto(imageUri);
+        macros = analysis.macros;
+        notes = analysis.description;
+      } catch (error) {
+        console.warn('AI meal analysis failed, using fallback:', error);
+      }
+    }
+
+    try {
+      await addMealUseCase({
+        id: mealId,
+        createdAt: new Date().toISOString(),
+        title,
+        source,
+        imageUri,
+        notes,
+        macros,
+      }, { historyRepo });
+      await chatRepo.addSystemMessageIfMissing(`meal_${mealId}`, `Logged: ${title}. Today updated.`);
+      Alert.alert('Saved');
+      setTitleInput('');
+      setDescriptionInput('');
+      setImageUri(undefined);
+    } finally {
+      setSaving(false);
+    }
   };
   return (
-    <AppScreen>
+    <AppScreen scroll keyboardAvoiding dismissKeyboardOnTouch>
       <View style={styles.wrap}>
         <Text style={styles.title}>{route.params?.readOnly ? 'Meal details' : 'Track meal'}</Text>
         {route.params?.readOnly ? <Card><Text style={styles.cardTitle}>{mealTitle ?? 'Loading...'}</Text>{mealInfo ? <Text style={styles.infoText}>{mealInfo}</Text> : null}</Card> : (
@@ -76,8 +99,8 @@ export function TrackMealScreen({ navigation, route }: Props): React.JSX.Element
                 <TextInput style={styles.textArea} multiline placeholder="Describe your meal. Example: chicken salad with olive oil." value={descriptionInput} onChangeText={setDescriptionInput} />
               </View>
             )}
-            <PrimaryButton title="Add Meal" onPress={() => void saveMeal(mode)} disabled={mode === 'photo' ? !imageUri : !descriptionInput.trim()} />
-            <SecondaryButton title="Cancel" onPress={() => navigation.goBack()} />
+            <PrimaryButton title="Add Meal" loading={saving} onPress={() => void saveMeal(mode)} disabled={saving || (mode === 'photo' ? !imageUri : !descriptionInput.trim())} />
+            <SecondaryButton title="Cancel" disabled={saving} onPress={() => navigation.goBack()} />
           </>
         )}
       </View>

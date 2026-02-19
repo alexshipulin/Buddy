@@ -14,20 +14,13 @@ const goals: Goal[] = ['Lose fat', 'Maintain weight', 'Gain muscle'];
 
 export function GoalSelectionScreen({ navigation }: Props): React.JSX.Element {
   const [selected, setSelected] = React.useState<Goal | null>(null);
-  const [gridWidth, setGridWidth] = React.useState(0);
-  React.useEffect(() => {
-    if (!gridWidth) return;
-    // #region agent log
-    fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',runId:'pre-fix',hypothesisId:'H1',location:'src/screens/GoalSelectionScreen.tsx:22',message:'Goal grid geometry',data:{gridWidth,gridItemPercent:48,gap:10,approxTwoCardsWidth:gridWidth*0.48*2+10},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-  }, [gridWidth]);
   const onContinue = async (): Promise<void> => {
     if (!selected) return;
     await userRepo.saveUser({ goal: selected, dietaryPreferences: [], allergies: [] });
     navigation.navigate('DietaryProfile');
   };
   return (
-    <AppScreen>
+    <AppScreen scroll>
       <View style={styles.wrap}>
         <View style={styles.progress}>
           <View style={styles.dot} />
@@ -37,7 +30,7 @@ export function GoalSelectionScreen({ navigation }: Props): React.JSX.Element {
         </View>
         <Text style={styles.title}>Select your goal</Text>
         <Text style={styles.subtitle}>Buddy will tailor picks for you.</Text>
-        <View style={styles.listGrid} onLayout={(event) => setGridWidth(event.nativeEvent.layout.width)}>
+        <View style={styles.listGrid}>
           {goals.map((goal) => (
             <Pressable key={goal} onPress={() => setSelected(goal)} style={styles.gridItem}>
               <Card style={[styles.card, selected === goal ? styles.cardSelected : null]}>

@@ -2,6 +2,7 @@ import { MenuAnalysisProvider } from '../data/providers/MenuAnalysisProvider';
 import { HistoryRepo } from '../data/repos/HistoryRepo';
 import { TrialRepo } from '../data/repos/TrialRepo';
 import { UserRepo } from '../data/repos/UserRepo';
+import { TEST_MODE } from '../config/flags';
 import { createId } from '../utils/id';
 
 type Deps = { historyRepo: HistoryRepo; userRepo: UserRepo; trialRepo: TrialRepo; menuProvider: MenuAnalysisProvider };
@@ -19,8 +20,10 @@ export async function analyzeMenuUseCase(images: string[], deps: Deps): Promise<
   const user = await deps.userRepo.getUser();
   if (!user) throw new Error('User profile is not set');
   // Post-trial free users are limited to one scan per day.
-  const allowed = await deps.trialRepo.incrementDailyScanIfAllowed();
-  if (!allowed) throw new DailyScanLimitReachedError();
+  if (!TEST_MODE) {
+    const allowed = await deps.trialRepo.incrementDailyScanIfAllowed();
+    if (!allowed) throw new DailyScanLimitReachedError();
+  }
   const result = await deps.menuProvider.analyzeMenu(images, user);
   await deps.historyRepo.saveScanResult(result);
   await deps.historyRepo.addItem({

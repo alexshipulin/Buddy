@@ -1,4 +1,5 @@
 import { TrialState } from '../../domain/models';
+import { TEST_MODE } from '../../config/flags';
 import { toIsoDateOnly } from '../../utils/date';
 import { getJson, setJson } from '../storage/storage';
 
@@ -14,6 +15,7 @@ export class TrialRepo {
     await setJson(TRIAL_KEY, state);
   }
   async incrementDailyScanIfAllowed(nowDate = new Date()): Promise<boolean> {
+    if (TEST_MODE) return true;
     const trial = await this.getTrial();
     // Premium or active trial period bypasses the post-trial daily cap.
     if (trial.isPremium) return true;

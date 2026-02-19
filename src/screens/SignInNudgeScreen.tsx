@@ -22,7 +22,7 @@ export function SignInNudgeScreen({ navigation, route }: Props): React.JSX.Eleme
     navigation.goBack();
   };
   return (
-    <AppScreen>
+    <AppScreen scroll>
       <View style={styles.wrap}>
         <Text style={styles.title}>Sign in to save your history</Text>
         <Card><Text style={styles.text}>Use Apple Sign In to keep your scans and meals safe on this device. You can skip for now.</Text></Card>

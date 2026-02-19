@@ -1,8 +1,9 @@
 import { DishRecommendation, MenuScanResult } from '../domain/models';
 import { createId } from '../utils/id';
+import * as FileSystem from 'expo-file-system';
 
 const GEMINI_TEXT_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
-const GEMINI_VISION_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent';
+const GEMINI_VISION_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 type GeminiTextRequest = {
   contents: Array<{
@@ -15,6 +16,12 @@ type GeminiVisionRequest = {
   contents: Array<{
     parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }>;
   }>;
+  generationConfig?: {
+    response_mime_type?: string;
+    response_json_schema?: unknown;
+    temperature?: number;
+    maxOutputTokens?: number;
+  };
 };
 
 type GeminiResponse = {
@@ -62,7 +69,15 @@ export async function uriToBase64(uri: string): Promise<string | null> {
   if (uri.startsWith('data:')) {
     return uri.split(',')[1] || null;
   }
-  if (uri.startsWith('file://') || uri.startsWith('http://') || uri.startsWith('https://')) {
+  if (uri.startsWith('file://')) {
+    try {
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+      return base64;
+    } catch {
+      return null;
+    }
+  }
+  if (uri.startsWith('http://') || uri.startsWith('https://')) {
     try {
       const response = await fetch(uri);
       const blob = await response.blob();
@@ -196,7 +211,7 @@ export async function analyzeMenu(input: string | string[] | { base64: string; m
             { text: prompt },
             {
               inlineData: {
-                mimeType: 'image/jpeg',
+                mimeType,
                 data: base64Image,
               },
             },
@@ -214,6 +229,19 @@ export async function analyzeMenu(input: string | string[] | { base64: string; m
     return createMockMenuResult();
   }
 }
+
+const MEAL_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    caloriesKcal: { type: 'number' },
+    proteinG: { type: 'number' },
+    carbsG: { type: 'number' },
+    fatG: { type: 'number' },
+    description: { type: 'string' },
+  },
+  required: ['caloriesKcal', 'proteinG', 'carbsG', 'fatG', 'description'],
+} as const;
 
 export async function analyzeMealPhoto(imageUri: string): Promise<{ macros: { caloriesKcal: number; proteinG: number; carbsG: number; fatG: number }; description: string }> {
   const apiKey = getApiKey();
@@ -234,7 +262,7 @@ export async function analyzeMealPhoto(imageUri: string): Promise<{ macros: { ca
       };
     }
 
-    const prompt = 'Analyze this meal photo and return JSON: {"caloriesKcal": number, "proteinG": number, "carbsG": number, "fatG": number, "description": "..."}';
+    const prompt = 'Analyze this meal photo and return JSON with caloriesKcal, proteinG, carbsG, fatG (numbers) and description (string).';
 
     const payload: GeminiVisionRequest = {
       contents: [
@@ -250,10 +278,52 @@ export async function analyzeMealPhoto(imageUri: string): Promise<{ macros: { ca
           ],
         },
       ],
+      generationConfig: {
+        response_mime_type: 'application/json',
+        response_json_schema: MEAL_SCHEMA,
+        temperature: 0.2,
+        maxOutputTokens: 200,
+      },
     };
 
     const responseText = await callGeminiVisionAPI(payload);
-    const parsed = JSON.parse(responseText);
+    let parsed: any;
+    try {
+      parsed = JSON.parse(responseText);
+    } catch (parseError) {
+      // Retry with stricter prompt
+      const retryPrompt = 'Return ONLY JSON. No markdown. No extra text. Analyze this meal photo and return JSON with caloriesKcal, proteinG, carbsG, fatG (numbers) and description (string).';
+      const retryPayload: GeminiVisionRequest = {
+        contents: [
+          {
+            parts: [
+              { text: retryPrompt },
+              {
+                inlineData: {
+                  mimeType: 'image/jpeg',
+                  data: base64Image,
+                },
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          response_mime_type: 'application/json',
+          response_json_schema: MEAL_SCHEMA,
+          temperature: 0.2,
+          maxOutputTokens: 200,
+        },
+      };
+
+      const retryResponseText = await callGeminiVisionAPI(retryPayload);
+      try {
+        parsed = JSON.parse(retryResponseText);
+      } catch (retryParseError) {
+        console.warn(`Meal photo analysis JSON parse failed after retry: ${retryParseError instanceof Error ? retryParseError.message : String(retryParseError)}`);
+        throw new Error('Model returned invalid JSON after retry');
+      }
+    }
+
     return {
       macros: {
         caloriesKcal: parsed.caloriesKcal || 450,
@@ -263,7 +333,8 @@ export async function analyzeMealPhoto(imageUri: string): Promise<{ macros: { ca
       },
       description: parsed.description || 'Meal analyzed.',
     };
-  } catch {
+  } catch (error) {
+    console.warn(`Meal photo analysis failed: ${error instanceof Error ? error.message : String(error)}`);
     return {
       macros: { caloriesKcal: 450, proteinG: 30, carbsG: 40, fatG: 15 },
       description: 'Meal logged. AI analysis unavailable.',

@@ -4,10 +4,11 @@ import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'rea
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../app/navigation/types';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { Card } from '../components/Card';
+import { AppScreen } from '../components/AppScreen';
 import { appTheme } from '../design/theme';
 import { AnalyzeMenuOutput, analyzeMenuUseCase, DailyScanLimitReachedError } from '../services/analyzeMenuUseCase';
 import { appPrefsRepo, historyRepo, menuAnalysisProvider, trialRepo, userRepo } from '../services/container';
@@ -16,26 +17,16 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ScanMenu'>;
 
 export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
   const cameraRef = React.useRef<CameraView | null>(null);
+  const insets = useSafeAreaInsets();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [photos, setPhotos] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(false);
-  React.useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',runId:'pre-fix',hypothesisId:'H4',location:'src/screens/ScanMenuScreen.tsx:24',message:'Camera permission state',data:{granted:cameraPermission?.granted ?? null,canAskAgain:cameraPermission?.canAskAgain ?? null,status:cameraPermission?.status ?? null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-  }, [cameraPermission?.canAskAgain, cameraPermission?.granted, cameraPermission?.status]);
   const removePhoto = (uri: string): void => setPhotos((p) => p.filter((i) => i !== uri));
   const takePhoto = async (): Promise<void> => {
     if (photos.length >= 3) return;
-    // #region agent log
-    fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',runId:'pre-fix',hypothesisId:'H4',location:'src/screens/ScanMenuScreen.tsx:30',message:'Take photo tapped',data:{existingPhotos:photos.length,permissionGranted:cameraPermission?.granted ?? null,hasCameraRef:Boolean(cameraRef.current)},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     const granted = cameraPermission?.granted || (await requestCameraPermission()).granted;
     if (!granted) return Alert.alert('Camera access needed', 'Please allow camera to scan menus.');
     const shot = await cameraRef.current?.takePictureAsync({ quality: 0.7 });
-    // #region agent log
-    fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',runId:'pre-fix',hypothesisId:'H4',location:'src/screens/ScanMenuScreen.tsx:35',message:'takePicture result',data:{hasShot:Boolean(shot?.uri),uriPrefix:shot?.uri ? shot.uri.slice(0,24) : null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     if (shot?.uri) setPhotos((p) => [...p, shot.uri].slice(0, 3));
   };
   const addFromGallery = async (): Promise<void> => {
@@ -81,33 +72,25 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
   };
 
   return (
-    <SafeAreaView style={styles.wrap}>
+    <AppScreen padded={false} respectInsets={false} style={styles.wrap}>
       <CameraView
         ref={cameraRef}
         style={styles.camera}
         facing="back"
-        onCameraReady={() => {
-          // #region agent log
-          fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',runId:'pre-fix',hypothesisId:'H4',location:'src/screens/ScanMenuScreen.tsx:84',message:'Camera ready event',data:{photosCount:photos.length},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
-        }}
-        onMountError={(event) => {
-          // #region agent log
-          fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',runId:'pre-fix',hypothesisId:'H4',location:'src/screens/ScanMenuScreen.tsx:90',message:'Camera mount error',data:{eventMessage:(event as { message?: string })?.message ?? null},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
-        }}
+        onCameraReady={() => {}}
+        onMountError={() => {}}
       />
-      <View style={styles.topOverlay}>
-        <Pressable style={styles.backBtn} onPress={() => navigation.goBack()}><Text style={styles.backText}>{'<'}</Text></Pressable>
+      <View style={[styles.topOverlay, { paddingTop: insets.top + appTheme.spacing.sm }]}>
+        <Pressable style={styles.backBtn} hitSlop={8} onPress={() => navigation.goBack()}><Text style={styles.backText}>{'<'}</Text></Pressable>
         <Text style={styles.title}>Scan menu</Text>
         <View style={styles.placeholder} />
       </View>
-      <View style={styles.bottomOverlay}>
+      <View style={[styles.bottomOverlay, { paddingBottom: insets.bottom + appTheme.spacing.md }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbRow}>
           {photos.map((uri) => (
             <View key={uri} style={styles.thumbWrap}>
               <Image source={{ uri }} style={styles.thumb} />
-              <Pressable style={styles.removeBtn} onPress={() => removePhoto(uri)}><Text style={styles.removeText}>X</Text></Pressable>
+              <Pressable style={styles.removeBtn} hitSlop={8} onPress={() => removePhoto(uri)}><Text style={styles.removeText}>X</Text></Pressable>
             </View>
           ))}
         </ScrollView>
@@ -123,18 +106,18 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
           <Card style={styles.overlayCard}><Text style={styles.overlayTitle}>Analyzing...</Text><Text style={styles.overlayText}>This may take a few seconds.</Text></Card>
         </View>
       ) : null}
-    </SafeAreaView>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: '#000000' },
   camera: { ...StyleSheet.absoluteFillObject },
-  topOverlay: { paddingHorizontal: appTheme.spacing.md, paddingTop: appTheme.spacing.sm, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  topOverlay: { paddingHorizontal: appTheme.spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#00000055', alignItems: 'center', justifyContent: 'center' },
   backText: { color: '#FFFFFF', fontWeight: '700' },
   title: { fontSize: appTheme.typography.body, color: '#FFFFFF', fontWeight: '700' },
-  bottomOverlay: { marginTop: 'auto', paddingHorizontal: appTheme.spacing.md, paddingBottom: appTheme.spacing.md, gap: appTheme.spacing.md },
+  bottomOverlay: { marginTop: 'auto', paddingHorizontal: appTheme.spacing.md, gap: appTheme.spacing.md },
   thumbRow: { gap: appTheme.spacing.sm, paddingVertical: 2 },
   thumbWrap: { position: 'relative' },
   thumb: { width: 58, height: 78, borderRadius: appTheme.radius.md, backgroundColor: '#FFFFFF44' },

@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { RootStackParamList } from '../app/navigation/types';
 import { AppScreen } from '../components/AppScreen';
 import { Chip } from '../components/Chip';
@@ -26,14 +26,17 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
     goHome();
   };
   return (
-    <AppScreen>
+    <AppScreen scroll>
       <View style={styles.wrap}>
         <View style={styles.progress}><View style={styles.dot} /><View style={styles.dot} /><View style={styles.dotActive} /><View style={styles.dot} /></View>
         <Text style={styles.title}>Dietary profile</Text>
         <Text style={styles.subtitle}>Optional. You can change this later.</Text>
-        <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.content}>
           <Text style={styles.sectionTitle}>Diet preferences</Text>
           <View style={styles.chipsWrap}>
+            <Pressable onPress={() => setSelectedPreferences([])} style={[styles.choiceChip, selectedPreferences.length === 0 && styles.choiceChipSelected]}>
+              <Chip label="None" selected={selectedPreferences.length === 0} />
+            </Pressable>
             {preferences.map((pref) => {
               const selected = selectedPreferences.includes(pref);
               return (
@@ -45,6 +48,9 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
           </View>
           <Text style={styles.sectionTitle}>Common allergies</Text>
           <View style={styles.chipsWrap}>
+            <Pressable onPress={() => setSelectedAllergies([])} style={[styles.choiceChip, selectedAllergies.length === 0 && styles.choiceChipSelected]}>
+              <Chip label="None" selected={selectedAllergies.length === 0} />
+            </Pressable>
             {allergies.map((allergy) => {
               const selected = selectedAllergies.includes(allergy);
               return (
@@ -54,7 +60,7 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
               );
             })}
           </View>
-        </ScrollView>
+        </View>
         <PrimaryButton title="Save" onPress={onSave} />
         <Pressable onPress={goHome}><Text style={styles.skip}>Skip</Text></Pressable>
       </View>

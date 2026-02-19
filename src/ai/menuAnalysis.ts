@@ -100,6 +100,7 @@ Task:
       response_mime_type: "application/json",
       response_json_schema: MENU_SCHEMA,
       temperature: 0.2,
+      maxOutputTokens: 400,
     },
   };
 
@@ -123,7 +124,69 @@ Task:
 
   try {
     return JSON.parse(raw) as MenuAnalysis;
-  } catch {
-    throw new Error("Model returned invalid JSON");
+  } catch (parseError) {
+    // Retry with stricter prompt
+    const retryPrompt = `Return ONLY JSON. No markdown. No extra text.
+
+Goal: ${params.userGoal}
+Diet preferences: ${params.dietPrefs.join(", ") || "none"}
+Allergies: ${params.allergies.join(", ") || "none"}
+
+Task:
+- Analyze the menu photo.
+- Return dishes in 3 groups: topPicks, caution, avoid.
+- Each dish: name, short reason, 0-3 tags.
+- Add warnings array.`;
+
+    const retryBody = {
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: retryPrompt },
+            {
+              inlineData: {
+                mimeType: params.mimeType,
+                data: params.imageBase64,
+              },
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        response_mime_type: "application/json",
+        response_json_schema: MENU_SCHEMA,
+        temperature: 0.2,
+        maxOutputTokens: 400,
+      },
+    };
+
+    const retryRes = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(retryBody),
+    });
+
+    if (!retryRes.ok) {
+      const errText = await retryRes.text();
+      console.warn(`Menu analysis JSON parse failed, retry also failed: ${errText}`);
+      throw new Error(`Gemini error ${retryRes.status}: ${errText}`);
+    }
+
+    const retryData = await retryRes.json();
+    const retryRaw =
+      retryData?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).filter(Boolean).join("") ?? "";
+
+    if (!retryRaw) {
+      console.warn("Menu analysis JSON parse failed, retry returned empty response");
+      throw new Error("Empty model response after retry");
+    }
+
+    try {
+      return JSON.parse(retryRaw) as MenuAnalysis;
+    } catch (retryParseError) {
+      console.warn(`Menu analysis JSON parse failed after retry: ${retryParseError instanceof Error ? retryParseError.message : String(retryParseError)}`);
+      throw new Error("Model returned invalid JSON after retry");
+    }
   }
 }

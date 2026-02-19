@@ -1,6 +1,7 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
 import { ImageBackground, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../app/navigation/types';
 import { AppScreen } from '../components/AppScreen';
 import { PrimaryButton } from '../components/PrimaryButton';
@@ -9,16 +10,17 @@ import { appTheme } from '../design/theme';
 type Props = NativeStackScreenProps<RootStackParamList, 'Welcome'>;
 
 export function WelcomeScreen({ navigation }: Props): React.JSX.Element {
+  const insets = useSafeAreaInsets();
   return (
     <View style={styles.root}>
       <ImageBackground source={{ uri: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=1200&auto=format&fit=crop' }} style={styles.hero}>
-        <View style={styles.topRow}>
-          <Pressable style={styles.skipBtn} onPress={() => navigation.navigate('GoalSelection')}>
+        <View style={[styles.topRow, { paddingTop: insets.top + appTheme.spacing.sm }]}>
+          <Pressable style={styles.skipBtn} hitSlop={8} onPress={() => navigation.navigate('GoalSelection')}>
             <Text style={styles.skipText}>Skip</Text>
           </Pressable>
         </View>
       </ImageBackground>
-      <AppScreen style={styles.bottomSheet}>
+      <AppScreen style={styles.bottomSheet} respectInsets={false}>
         <View style={styles.handle} />
         <View style={styles.content}>
           <Text style={styles.title}>Pick the best dish fast</Text>
@@ -36,7 +38,7 @@ export function WelcomeScreen({ navigation }: Props): React.JSX.Element {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   hero: { flex: 1, justifyContent: 'flex-start' },
-  topRow: { paddingTop: 60, paddingHorizontal: appTheme.spacing.md, alignItems: 'flex-end' },
+  topRow: { paddingHorizontal: appTheme.spacing.md, alignItems: 'flex-end' },
   skipBtn: { backgroundColor: '#00000044', borderRadius: appTheme.radius.pill, paddingHorizontal: 14, paddingVertical: 7 },
   skipText: { color: '#FFFFFF', fontWeight: '600' },
   bottomSheet: { marginTop: -14, backgroundColor: appTheme.colors.surface, borderTopLeftRadius: 34, borderTopRightRadius: 34 },

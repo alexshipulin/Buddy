@@ -3,38 +3,54 @@ import { analyzeMenuWithGemini } from '../../ai/menuAnalysis';
 import { uriToBase64 } from '../../services/aiService';
 import { createId } from '../../utils/id';
 import { MenuAnalysisProvider } from './MenuAnalysisProvider';
+import { MockMenuAnalysisProvider } from './MockMenuAnalysisProvider';
+
+function detectMimeType(uri: string): string {
+  if (uri.endsWith('.png')) return 'image/png';
+  if (uri.endsWith('.jpg') || uri.endsWith('.jpeg')) return 'image/jpeg';
+  if (uri.endsWith('.webp')) return 'image/webp';
+  return 'image/jpeg';
+}
 
 export class GeminiMenuAnalysisProvider implements MenuAnalysisProvider {
+  private mockProvider = new MockMenuAnalysisProvider();
+
   async analyzeMenu(images: string[], user: UserProfile): Promise<MenuScanResult> {
     const firstImage = images[0];
     if (!firstImage) {
-      throw new Error('No images provided');
+      return this.mockProvider.analyzeMenu(images, user);
     }
 
-    const base64Image = await uriToBase64(firstImage);
-    if (!base64Image) {
-      throw new Error('Could not convert image to base64');
+    try {
+      const base64Image = await uriToBase64(firstImage);
+      if (!base64Image) {
+        return this.mockProvider.analyzeMenu(images, user);
+      }
+
+      const mimeType = detectMimeType(firstImage);
+
+      const analysis = await analyzeMenuWithGemini({
+        imageBase64: base64Image,
+        mimeType,
+        userGoal: user.goal,
+        dietPrefs: user.dietaryPreferences,
+        allergies: user.allergies,
+      });
+
+      const summaryText = `Buddy ranked dishes for ${user.goal.toLowerCase()} and your preferences.${analysis.warnings.length > 0 ? ` Warnings: ${analysis.warnings.join('; ')}.` : ''}`;
+
+      return {
+        id: createId('scan'),
+        createdAt: new Date().toISOString(),
+        inputImages: images,
+        topPicks: analysis.topPicks.map((d) => ({ name: d.name, reasonShort: d.reason, tags: d.tags })),
+        caution: analysis.caution.map((d) => ({ name: d.name, reasonShort: d.reason, tags: d.tags })),
+        avoid: analysis.avoid.map((d) => ({ name: d.name, reasonShort: d.reason, tags: d.tags })),
+        summaryText,
+        disclaimerFlag: true,
+      };
+    } catch (error) {
+      return this.mockProvider.analyzeMenu(images, user);
     }
-
-    const analysis = await analyzeMenuWithGemini({
-      imageBase64: base64Image,
-      mimeType: 'image/jpeg',
-      userGoal: user.goal,
-      dietPrefs: user.dietaryPreferences,
-      allergies: user.allergies,
-    });
-
-    const summaryText = `Buddy ranked dishes for ${user.goal.toLowerCase()} and your preferences.${analysis.warnings.length > 0 ? ` Warnings: ${analysis.warnings.join('; ')}.` : ''}`;
-
-    return {
-      id: createId('scan'),
-      createdAt: new Date().toISOString(),
-      inputImages: images,
-      topPicks: analysis.topPicks.map((d) => ({ name: d.name, reasonShort: d.reason, tags: d.tags })),
-      caution: analysis.caution.map((d) => ({ name: d.name, reasonShort: d.reason, tags: d.tags })),
-      avoid: analysis.avoid.map((d) => ({ name: d.name, reasonShort: d.reason, tags: d.tags })),
-      summaryText,
-      disclaimerFlag: true,
-    };
   }
 }

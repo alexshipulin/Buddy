@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { RootStackParamList } from '../app/navigation/types';
 import { AppScreen } from '../components/AppScreen';
 import { Card } from '../components/Card';
@@ -45,8 +45,8 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
   })(); }, [result]);
 
   return (
-    <AppScreen>
-      <ScrollView contentContainerStyle={styles.wrap}>
+    <AppScreen scroll>
+      <View style={styles.wrap}>
         <Text style={styles.status}>Analysis Complete</Text>
         <Text style={styles.title}>Top picks</Text>
         <Text style={styles.subTitle}>Based on your goal and profile</Text>
@@ -64,7 +64,7 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
             <Text style={styles.disclaimer}>Educational guidance only. Not medical advice.</Text>
           </>
         )}
-      </ScrollView>
+      </View>
       <Modal transparent visible={Boolean(whyText)} animationType="slide" onRequestClose={() => setWhyText(null)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setWhyText(null)}>
           <Pressable style={styles.sheet} onPress={() => undefined}>

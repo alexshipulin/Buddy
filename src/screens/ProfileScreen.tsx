@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
-import { Dimensions, Keyboard, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { RootStackParamList } from '../app/navigation/types';
 import { AppScreen } from '../components/AppScreen';
 import { Card } from '../components/Card';
@@ -23,18 +23,7 @@ export function ProfileScreen({ route }: Props): React.JSX.Element {
     const u = await userRepo.getUser(); setUser(u);
     if (u?.baseParams) { setHeight(String(u.baseParams.heightCm)); setWeight(String(u.baseParams.weightKg)); setAge(u.baseParams.age ? String(u.baseParams.age) : ''); setActivity(u.baseParams.activityLevel); setSex(u.baseParams.sex ?? 'Prefer not to say'); }
     const trial = await trialRepo.getTrial(); setTrialText(trial.isPremium ? 'Premium' : `Trial left: ${trialRepo.getTrialDaysLeft(trial)}d`);
-    // #region agent log
-    fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',runId:'pre-fix',hypothesisId:'H2_H3',location:'src/screens/ProfileScreen.tsx:25',message:'Profile loaded state',data:{hasBaseParams:Boolean(u?.baseParams),activityLevel:u?.baseParams?.activityLevel ?? null,windowHeight:Dimensions.get('window').height},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
   })(); }, []);
-  React.useEffect(() => {
-    const showSub = Keyboard.addListener('keyboardDidShow', (event) => {
-      // #region agent log
-      fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',runId:'pre-fix',hypothesisId:'H2',location:'src/screens/ProfileScreen.tsx:31',message:'Keyboard shown on Profile',data:{keyboardHeight:event.endCoordinates?.height ?? null,screenY:event.endCoordinates?.screenY ?? null,currentActivityValue:activity},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-    });
-    return () => showSub.remove();
-  }, [activity]);
   const save = async (): Promise<void> => {
     const current = await userRepo.getUser();
     if (!current) return;
@@ -43,14 +32,11 @@ export function ProfileScreen({ route }: Props): React.JSX.Element {
       ...current,
       baseParams: Number.isFinite(h) && Number.isFinite(w) && h > 0 && w > 0 ? { heightCm: h, weightKg: w, age: Number.isFinite(a) && a > 0 ? a : undefined, activityLevel: activity, sex } : undefined,
     };
-    // #region agent log
-    fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',runId:'pre-fix',hypothesisId:'H3',location:'src/screens/ProfileScreen.tsx:41',message:'Saving base params',data:{height:h,weight:w,age:a,activity,sex},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     await userRepo.saveUser(next); setUser(next);
   };
   return (
-    <AppScreen>
-      <ScrollView contentContainerStyle={styles.wrap}>
+    <AppScreen scroll keyboardAvoiding dismissKeyboardOnTouch>
+      <View style={styles.wrap}>
         <Text style={styles.title}>Profile</Text>
         <Card><SectionHeader title="Account" /><Text style={styles.value}>Local account (MVP)</Text></Card>
         <Card>
@@ -70,9 +56,6 @@ export function ProfileScreen({ route }: Props): React.JSX.Element {
             style={styles.input}
             value={activity}
             onChangeText={(t) => {
-              // #region agent log
-              fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',runId:'pre-fix',hypothesisId:'H3',location:'src/screens/ProfileScreen.tsx:66',message:'Activity text changed',data:{typedValue:t},timestamp:Date.now()})}).catch(()=>{});
-              // #endregion
               setActivity((t as ActivityLevel) || 'Medium');
             }}
             placeholder="Activity level: Low / Medium / High"
@@ -82,7 +65,7 @@ export function ProfileScreen({ route }: Props): React.JSX.Element {
         </Card>
         <Card><SectionHeader title="Access" /><Text style={styles.value}>{trialText}</Text></Card>
         <Text style={styles.disclaimer}>Information is educational only and not medical advice.</Text>
-      </ScrollView>
+      </View>
     </AppScreen>
   );
 }
