@@ -93,17 +93,17 @@ export function ChatScreen({ navigation, route }: Props): React.JSX.Element {
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, gap: appTheme.spacing.sm },
-  title: { fontSize: appTheme.typography.h2, color: appTheme.colors.textPrimary, fontWeight: '700' },
-  subtitle: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.small },
+  title: { fontSize: appTheme.typography.h2.fontSize, color: appTheme.colors.textPrimary, fontWeight: '700' },
+  subtitle: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.small.fontSize },
   list: { flex: 1 },
   messages: { gap: appTheme.spacing.sm, paddingVertical: appTheme.spacing.sm, flexGrow: 1 },
   bubble: { maxWidth: '90%', borderRadius: appTheme.radius.md, paddingHorizontal: appTheme.spacing.sm, paddingVertical: 10 },
   userBubble: { alignSelf: 'flex-end', backgroundColor: appTheme.colors.accent, borderTopRightRadius: 8 },
   systemBubble: { alignSelf: 'flex-start', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: appTheme.colors.border, borderTopLeftRadius: 8 },
-  bubbleText: { fontSize: appTheme.typography.body },
+  bubbleText: { fontSize: appTheme.typography.body.fontSize },
   userText: { color: '#FFFFFF' },
   systemText: { color: appTheme.colors.textPrimary },
-  systemMessage: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.small },
+  systemMessage: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.small.fontSize },
   composer: { gap: appTheme.spacing.sm, marginTop: appTheme.spacing.sm },
   input: { borderWidth: 1, borderColor: appTheme.colors.border, borderRadius: appTheme.radius.md, paddingHorizontal: appTheme.spacing.sm, paddingVertical: 10, backgroundColor: '#FFFFFF' },
 });

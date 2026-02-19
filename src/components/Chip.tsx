@@ -22,7 +22,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     alignSelf: 'flex-start',
   },
-  text: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.small, fontWeight: '600' },
+  text: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.small.fontSize, fontWeight: '600' },
   selectedChip: { backgroundColor: '#0F172A', borderColor: '#0F172A' },
   selectedText: { color: '#FFFFFF' },
 });

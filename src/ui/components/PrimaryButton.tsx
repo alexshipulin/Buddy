@@ -1,6 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleProp, StyleSheet, Text, ViewStyle } from 'react-native';
-import { uiTheme } from '../theme';
+import { appTheme } from '../../design/theme';
+import { spec } from '../../design/spec';
 
 type Props = {
   title: string;
@@ -16,23 +17,43 @@ export function PrimaryButton({ title, onPress, disabled = false, loading = fals
     <Pressable
       onPress={onPress}
       disabled={blocked}
-      style={({ pressed }) => [styles.button, style, pressed && !blocked ? styles.pressed : null, blocked ? styles.disabled : null]}
+      style={({ pressed }) => [
+        styles.button,
+        style,
+        pressed && !blocked && styles.pressed,
+        blocked && styles.disabled,
+      ]}
+      hitSlop={Math.max(0, (spec.minTouchTarget - spec.primaryButtonHeight) / 2)}
     >
-      {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.text}>{title}</Text>}
+      {loading ? (
+        <ActivityIndicator color={appTheme.colors.primaryText} />
+      ) : (
+        <Text style={styles.text} maxFontSizeMultiplier={1.2}>{title}</Text>
+      )}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   button: {
-    minHeight: 56,
-    borderRadius: uiTheme.radius.pill,
-    backgroundColor: uiTheme.colors.primary,
+    minHeight: spec.primaryButtonHeight,
+    borderRadius: spec.primaryButtonRadius,
+    backgroundColor: appTheme.colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: uiTheme.spacing.lg,
+    paddingHorizontal: appTheme.spacing[24],
+    ...appTheme.shadows.card,
   },
-  text: { color: '#FFFFFF', fontWeight: '700', fontSize: 28 / 1.75 },
+  text: {
+    fontSize: appTheme.typography.bodySemibold.fontSize,
+    lineHeight: appTheme.typography.bodySemibold.lineHeight,
+    fontWeight: appTheme.typography.bodySemibold.fontWeight,
+    color: appTheme.colors.primaryText,
+  },
   pressed: { opacity: 0.92 },
-  disabled: { opacity: 0.5 },
+  disabled: {
+    backgroundColor: appTheme.colors.disabledBg,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
 });

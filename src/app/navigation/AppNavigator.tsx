@@ -21,23 +21,24 @@ export function AppNavigator(): React.JSX.Element {
     <Stack.Navigator
       initialRouteName="Welcome"
       screenOptions={{
+        headerShown: false,
         headerStyle: { backgroundColor: appTheme.colors.background },
         headerShadowVisible: false,
         headerTintColor: appTheme.colors.textPrimary,
         contentStyle: { backgroundColor: appTheme.colors.background },
       }}
     >
-      <Stack.Screen name="Welcome" component={WelcomeScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="GoalSelection" component={GoalSelectionScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="DietaryProfile" component={DietaryProfileScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="ScanMenu" component={ScanMenuScreen} options={{ title: 'Scan menu', headerShown: false }} />
-      <Stack.Screen name="MenuResults" component={MenuResultsScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="TrackMeal" component={TrackMealScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Chat" component={ChatScreen} options={{ title: 'Chat with Buddy' }} />
-      <Stack.Screen name="Paywall" component={PaywallScreen} options={{ title: 'Premium', presentation: 'modal' }} />
-      <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="SignInNudge" component={SignInNudgeScreen} options={{ title: 'Sign in', presentation: 'modal' }} />
+      <Stack.Screen name="Welcome" component={WelcomeScreen} />
+      <Stack.Screen name="GoalSelection" component={GoalSelectionScreen} />
+      <Stack.Screen name="DietaryProfile" component={DietaryProfileScreen} />
+      <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Screen name="ScanMenu" component={ScanMenuScreen} />
+      <Stack.Screen name="MenuResults" component={MenuResultsScreen} />
+      <Stack.Screen name="TrackMeal" component={TrackMealScreen} />
+      <Stack.Screen name="Chat" component={ChatScreen} />
+      <Stack.Screen name="Paywall" component={PaywallScreen} options={{ presentation: 'modal' }} />
+      <Stack.Screen name="Profile" component={ProfileScreen} />
+      <Stack.Screen name="SignInNudge" component={SignInNudgeScreen} options={{ presentation: 'modal' }} />
     </Stack.Navigator>
   );
 }

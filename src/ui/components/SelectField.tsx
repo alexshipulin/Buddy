@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { uiTheme } from '../theme';
+import { appTheme } from '../../design/theme';
+import { spec } from '../../design/spec';
 
 type Option<T extends string> = { label: string; value: T };
 
@@ -25,7 +26,7 @@ export function SelectField<T extends string>({ label, value, options, onChange 
     <View style={styles.container}>
       <Text style={styles.label}>{label}</Text>
       <Pressable style={styles.field} onPress={cycle}>
-        <Text style={styles.value}>{active}</Text>
+        <Text style={styles.value} numberOfLines={1}>{active}</Text>
         <Text style={styles.chevron}>⌄</Text>
       </Pressable>
     </View>
@@ -34,18 +35,26 @@ export function SelectField<T extends string>({ label, value, options, onChange 
 
 const styles = StyleSheet.create({
   container: { flex: 1, gap: 6 },
-  label: { fontSize: 13, color: '#6B7280' },
+  label: {
+    fontSize: appTheme.typography.caption.fontSize,
+    color: appTheme.colors.muted,
+  },
   field: {
-    minHeight: 44,
-    borderRadius: uiTheme.radius.sm,
+    minHeight: spec.inputHeight,
+    borderRadius: spec.inputRadius,
     borderWidth: 1,
-    borderColor: uiTheme.colors.border,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
+    borderColor: appTheme.colors.border,
+    backgroundColor: appTheme.colors.surface,
+    paddingHorizontal: spec.inputPaddingX,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  value: { color: uiTheme.colors.textPrimary, fontSize: 16, fontWeight: '500' },
-  chevron: { color: '#6B7280', fontSize: 18, lineHeight: 18 },
+  value: {
+    flex: 1,
+    fontSize: appTheme.typography.body.fontSize,
+    color: appTheme.colors.textPrimary,
+    fontWeight: '500',
+  },
+  chevron: { color: appTheme.colors.muted, fontSize: 18, lineHeight: 18 },
 });

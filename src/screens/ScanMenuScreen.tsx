@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, ImageStyle, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
@@ -89,7 +89,7 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbRow}>
           {photos.map((uri) => (
             <View key={uri} style={styles.thumbWrap}>
-              <Image source={{ uri }} style={styles.thumb} />
+              <Image source={{ uri }} style={styles.thumb as ImageStyle} />
               <Pressable style={styles.removeBtn} hitSlop={8} onPress={() => removePhoto(uri)}><Text style={styles.removeText}>X</Text></Pressable>
             </View>
           ))}
@@ -116,7 +116,7 @@ const styles = StyleSheet.create({
   topOverlay: { paddingHorizontal: appTheme.spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#00000055', alignItems: 'center', justifyContent: 'center' },
   backText: { color: '#FFFFFF', fontWeight: '700' },
-  title: { fontSize: appTheme.typography.body, color: '#FFFFFF', fontWeight: '700' },
+  title: { fontSize: appTheme.typography.body.fontSize, color: '#FFFFFF', fontWeight: '700' },
   bottomOverlay: { marginTop: 'auto', paddingHorizontal: appTheme.spacing.md, gap: appTheme.spacing.md },
   thumbRow: { gap: appTheme.spacing.sm, paddingVertical: 2 },
   thumbWrap: { position: 'relative' },
@@ -125,12 +125,12 @@ const styles = StyleSheet.create({
   removeText: { color: '#FFFFFF', fontSize: 9, fontWeight: '700' },
   bottomRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   importBtn: { width: 84, height: 54, borderRadius: appTheme.radius.md, backgroundColor: '#00000055', alignItems: 'center', justifyContent: 'center' },
-  importText: { color: '#FFFFFF', fontSize: appTheme.typography.small, fontWeight: '600' },
+  importText: { color: '#FFFFFF', fontSize: appTheme.typography.small.fontSize, fontWeight: '600' },
   captureBtn: { width: 84, height: 84, borderRadius: 42, borderWidth: 4, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
   captureInner: { width: 68, height: 68, borderRadius: 34, backgroundColor: '#FFFFFF' },
   placeholder: { width: 84 },
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: '#11182755', alignItems: 'center', justifyContent: 'center' },
   overlayCard: { width: '82%', alignItems: 'center', gap: appTheme.spacing.xs },
-  overlayTitle: { color: appTheme.colors.textPrimary, fontWeight: '700', fontSize: appTheme.typography.body },
-  overlayText: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.small },
+  overlayTitle: { color: appTheme.colors.textPrimary, fontWeight: '700', fontSize: appTheme.typography.body.fontSize },
+  overlayText: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.small.fontSize },
 });

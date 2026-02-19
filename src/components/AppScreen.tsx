@@ -47,11 +47,10 @@ export function AppScreen({
   const bottomInset = respectInsets ? insets.bottom : 0;
   const paddingStyle: ViewStyle = padded
     ? {
-        paddingHorizontal: appTheme.spacing.md,
-        paddingTop: appTheme.spacing.md + topInset,
-        paddingBottom: appTheme.spacing.md + bottomInset,
+        paddingHorizontal: 20,
+        paddingBottom: bottomInset + 16,
       }
-    : { paddingTop: topInset, paddingBottom: bottomInset };
+    : { paddingBottom: bottomInset };
   const backgroundColor = background === 'surface' ? appTheme.colors.surface : appTheme.colors.background;
 
   const containerContent = scroll ? (

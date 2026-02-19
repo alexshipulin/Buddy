@@ -35,6 +35,6 @@ export function SignInNudgeScreen({ navigation, route }: Props): React.JSX.Eleme
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, gap: appTheme.spacing.md },
-  title: { fontSize: appTheme.typography.h2, color: appTheme.colors.textPrimary, fontWeight: '700' },
-  text: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.body },
+  title: { fontSize: appTheme.typography.h2.fontSize, color: appTheme.colors.textPrimary, fontWeight: '700' },
+  text: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.body.fontSize },
 });

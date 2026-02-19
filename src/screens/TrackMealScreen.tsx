@@ -135,5 +135,5 @@ const styles = StyleSheet.create({
   textArea: { minHeight: 120, borderWidth: 1, borderColor: uiTheme.colors.border, borderRadius: uiTheme.radius.sm, paddingHorizontal: uiTheme.spacing.sm, paddingVertical: 10, textAlignVertical: 'top', backgroundColor: '#FFFFFF' },
   bottomActions: { marginTop: 'auto', gap: uiTheme.spacing.sm },
   cardTitle: { ...typography.h3 },
-  infoText: { marginTop: uiTheme.spacing.xs, color: uiTheme.colors.textSecondary, fontSize: 17 },
+  infoText: { marginTop: uiTheme.spacing.sm, color: uiTheme.colors.textSecondary, fontSize: 17 },
 });

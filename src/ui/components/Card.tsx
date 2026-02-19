@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleProp, StyleSheet, View, ViewProps, ViewStyle } from 'react-native';
-import { uiTheme } from '../theme';
+import { appTheme } from '../../design/theme';
+import { spec } from '../../design/spec';
 
 type Props = ViewProps & {
   children: React.ReactNode;
@@ -17,11 +18,11 @@ export function Card({ children, style, ...rest }: Props): React.JSX.Element {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: uiTheme.colors.surface,
-    borderRadius: uiTheme.radius.lg,
-    borderWidth: 1,
-    borderColor: uiTheme.colors.border,
-    padding: uiTheme.spacing.md,
-    ...uiTheme.shadows.card,
+    backgroundColor: appTheme.colors.surface,
+    borderRadius: spec.cardRadius,
+    borderWidth: spec.cardBorderWidth,
+    borderColor: appTheme.colors.border,
+    padding: spec.cardPadding,
+    ...appTheme.shadows.card,
   },
 });

@@ -28,7 +28,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  text: { color: '#FFFFFF', fontWeight: '700', fontSize: appTheme.typography.body },
+  text: { color: '#FFFFFF', fontWeight: '700', fontSize: appTheme.typography.body.fontSize },
   pressed: { opacity: 0.9 },
   disabled: { opacity: 0.45 },
 });

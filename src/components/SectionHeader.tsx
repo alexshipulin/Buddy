@@ -15,6 +15,6 @@ export function SectionHeader({ title, rightText }: Props): React.JSX.Element {
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  title: { fontSize: appTheme.typography.h3, fontWeight: '700', color: appTheme.colors.textPrimary },
-  right: { fontSize: appTheme.typography.small, color: appTheme.colors.textSecondary },
+  title: { fontSize: appTheme.typography.h3.fontSize, fontWeight: '700', color: appTheme.colors.textPrimary },
+  right: { fontSize: appTheme.typography.small.fontSize, color: appTheme.colors.textSecondary },
 });

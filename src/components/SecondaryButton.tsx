@@ -23,7 +23,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  text: { color: appTheme.colors.textSecondary, fontWeight: '700', fontSize: appTheme.typography.body },
+  text: { color: appTheme.colors.textSecondary, fontWeight: '700', fontSize: appTheme.typography.body.fontSize },
   pressed: { opacity: 0.85 },
   disabled: { opacity: 0.55 },
 });

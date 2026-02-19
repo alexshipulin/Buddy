@@ -11,7 +11,8 @@ import {
   ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { uiTheme } from '../theme';
+import { spec } from '../../design/spec';
+import { appTheme } from '../../design/theme';
 
 type Props = {
   children: React.ReactNode;
@@ -33,11 +34,10 @@ export function Screen({
   const insets = useSafeAreaInsets();
   const containerPadding: ViewStyle = padded
     ? {
-        paddingHorizontal: uiTheme.spacing.md,
-        paddingTop: uiTheme.spacing.sm + insets.top,
-        paddingBottom: uiTheme.spacing.sm + insets.bottom,
+        paddingHorizontal: spec.screenPaddingHorizontal,
+        paddingBottom: insets.bottom + spec.screenPaddingBottomOffset,
       }
-    : { paddingTop: insets.top, paddingBottom: insets.bottom };
+    : { paddingBottom: insets.bottom };
 
   const content = scroll ? (
     <ScrollView
@@ -65,7 +65,7 @@ export function Screen({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: uiTheme.colors.background },
+  root: { flex: 1, backgroundColor: appTheme.colors.background },
   flex: { flex: 1 },
   scrollGrow: { flexGrow: 1 },
 });

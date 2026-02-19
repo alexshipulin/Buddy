@@ -1,6 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleProp, StyleSheet, Text, ViewStyle } from 'react-native';
-import { uiTheme } from '../theme';
+import { appTheme } from '../../design/theme';
+import { spec } from '../../design/spec';
 
 type Props = {
   title: string;
@@ -16,23 +17,29 @@ export function SecondaryButton({ title, onPress, disabled = false, loading = fa
     <Pressable
       onPress={onPress}
       disabled={blocked}
-      style={({ pressed }) => [styles.button, style, pressed && !blocked ? styles.pressed : null, blocked ? styles.disabled : null]}
+      style={({ pressed }) => [styles.button, style, pressed && !blocked && styles.pressed, blocked && styles.disabled]}
     >
-      {loading ? <ActivityIndicator color={uiTheme.colors.textSecondary} /> : <Text style={styles.text}>{title}</Text>}
+      {loading ? <ActivityIndicator color={appTheme.colors.muted} /> : <Text style={styles.text} maxFontSizeMultiplier={1.2}>{title}</Text>}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   button: {
-    minHeight: 56,
-    borderRadius: uiTheme.radius.pill,
-    backgroundColor: uiTheme.colors.muted,
+    minHeight: spec.primaryButtonHeight,
+    borderRadius: spec.primaryButtonRadius,
+    backgroundColor: appTheme.colors.surface,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: uiTheme.spacing.lg,
+    paddingHorizontal: appTheme.spacing[24],
   },
-  text: { color: '#1F2937', fontWeight: '700', fontSize: 28 / 1.75 },
+  text: {
+    fontSize: appTheme.typography.bodySemibold.fontSize,
+    fontWeight: appTheme.typography.bodySemibold.fontWeight,
+    color: appTheme.colors.textPrimary,
+  },
   pressed: { opacity: 0.9 },
   disabled: { opacity: 0.5 },
 });

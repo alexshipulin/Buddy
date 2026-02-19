@@ -1,46 +1,48 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { RootStackParamList } from '../app/navigation/types';
 import { DishRecommendation, MenuScanResult } from '../domain/models';
 import { USE_MOCK_DATA } from '../config/local';
 import { mockTopPicksResult } from '../mock/topPicks';
+import { addMealUseCase } from '../services/addMealUseCase';
 import { chatRepo, historyRepo } from '../services/container';
-import { AppHeader } from '../ui/components/AppHeader';
-import { AppIcon } from '../ui/components/AppIcon';
+import { createId } from '../utils/id';
+import { ScreenHeader } from '../components/ScreenHeader';
 import { Card } from '../ui/components/Card';
 import { Chip } from '../ui/components/Chip';
 import { PrimaryButton } from '../ui/components/PrimaryButton';
 import { Screen } from '../ui/components/Screen';
 import { SecondaryButton } from '../ui/components/SecondaryButton';
-import { uiTheme } from '../ui/theme';
+import { appTheme } from '../design/theme';
+import { spec } from '../design/spec';
 import { typography } from '../ui/typography';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MenuResults'>;
 
-function DishRow({ item, onWhy }: { item: DishRecommendation; onWhy: (s: string) => void }): React.JSX.Element {
-  const match = Math.max(86, 98 - item.name.length % 7);
+function DishRow({
+  item,
+  onWhy,
+  onTakeDish,
+}: {
+  item: DishRecommendation;
+  onWhy: (s: string) => void;
+  onTakeDish: (item: DishRecommendation) => void;
+}): React.JSX.Element {
   return (
     <Card style={styles.dishCard}>
-      <View style={styles.rowBetween}>
-        <Text style={styles.dishName}>{item.name}</Text>
-        <Text style={styles.matchText}>{match}% match</Text>
-      </View>
-      <Text style={styles.reason}>{item.reasonShort}</Text>
-      <View style={styles.macroRow}>
-        <View style={styles.macroCell}><Text style={styles.macroLabel}>CALS</Text><Text style={styles.macroValue}>{280 + item.name.length * 2}</Text></View>
-        <View style={styles.macroCell}><Text style={styles.macroLabel}>P</Text><Text style={styles.macroValue}>{20 + item.name.length % 20}g</Text></View>
-        <View style={styles.macroCell}><Text style={styles.macroLabel}>C</Text><Text style={styles.macroValue}>{8 + item.tags.length * 3}g</Text></View>
-        <View style={styles.macroCell}><Text style={styles.macroLabel}>F</Text><Text style={styles.macroValue}>{7 + item.name.length % 12}g</Text></View>
-      </View>
-      <View style={styles.tags}>{item.tags.slice(0, 4).map((tag) => <Chip key={`${item.name}_${tag}`} label={tag} />)}</View>
-      <View style={styles.statusRow}>
-        <Text style={styles.statusOk}>● Allergen safe</Text>
-        <Text style={styles.statusConf}>✦ High confidence</Text>
+      <Text style={styles.dishName} maxFontSizeMultiplier={1.2}>{item.name}</Text>
+      <Text style={styles.reason} maxFontSizeMultiplier={1.2}>{item.reasonShort}</Text>
+      <View style={styles.tags}>
+        {item.tags.slice(0, 4).map((tag) => (
+          <Chip key={`${item.name}_${tag}`} label={tag} small />
+        ))}
       </View>
       <View style={styles.actionsRow}>
-        <PrimaryButton title="I take it" style={styles.actionBtn} />
-        <SecondaryButton title="Ask Buddy" style={styles.actionBtn} onPress={() => onWhy(item.reasonShort)} />
+        <PrimaryButton title="I take it" style={styles.actionBtn} onPress={() => onTakeDish(item)} />
+        <Pressable onPress={() => onWhy(item.reasonShort)}>
+          <Text style={styles.whyLink} maxFontSizeMultiplier={1.2}>Why?</Text>
+        </Pressable>
       </View>
     </Card>
   );
@@ -50,56 +52,83 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
   const [result, setResult] = React.useState<MenuScanResult | null>(null);
   const [whyText, setWhyText] = React.useState<string | null>(null);
   const [paywallHandled, setPaywallHandled] = React.useState(false);
-  React.useEffect(() => { void (async () => {
-    if (route.params?.resultId) {
-      const byId = await historyRepo.getScanResultById(route.params.resultId);
-      if (byId) return setResult(byId);
-    }
-    const first = (await historyRepo.listRecent(20)).find((i) => i.type === 'menu_scan');
-    const latestResult = first ? await historyRepo.getScanResultById(first.payloadRef) : null;
-    if (latestResult) {
-      setResult(latestResult);
-      return;
-    }
-    setResult(USE_MOCK_DATA ? mockTopPicksResult : null);
-  })(); }, [route.params?.resultId]);
+
+  React.useEffect(() => {
+    void (async () => {
+      if (route.params?.resultId) {
+        const byId = await historyRepo.getScanResultById(route.params.resultId);
+        if (byId) return setResult(byId);
+      }
+      const first = (await historyRepo.listRecent(20)).find((i) => i.type === 'menu_scan');
+      const latestResult = first ? await historyRepo.getScanResultById(first.payloadRef) : null;
+      if (latestResult) {
+        setResult(latestResult);
+        return;
+      }
+      setResult(USE_MOCK_DATA ? mockTopPicksResult : null);
+    })();
+  }, [route.params?.resultId]);
+
   React.useEffect(() => {
     if (!result || paywallHandled || !route.params?.paywallAfterOpen) return;
     setPaywallHandled(true);
     navigation.navigate('Paywall', { source: 'first_result', trialDaysLeft: route.params?.trialDaysLeft ?? 7 });
   }, [navigation, paywallHandled, result, route.params?.paywallAfterOpen, route.params?.trialDaysLeft]);
-  React.useEffect(() => { void (async () => {
-    if (!result) return;
-    const picks = result.topPicks.map((i, idx) => `${idx + 1}. ${i.name}`).join('\n');
-    await chatRepo.addSystemMessageIfMissing(`result_${result.id}`, `${result.summaryText}\nTop picks:\n${picks}`);
-  })(); }, [result]);
+
+  React.useEffect(() => {
+    void (async () => {
+      if (!result) return;
+      const picks = result.topPicks.map((i, idx) => `${idx + 1}. ${i.name}`).join('\n');
+      await chatRepo.addSystemMessageIfMissing(`result_${result.id}`, `${result.summaryText}\nTop picks:\n${picks}`);
+    })();
+  }, [result]);
+
+  const handleTakeDish = React.useCallback(async (dish: DishRecommendation): Promise<void> => {
+    const mealId = createId('meal');
+    await addMealUseCase(
+      {
+        id: mealId,
+        createdAt: new Date().toISOString(),
+        title: dish.name,
+        source: 'text',
+        macros: { caloriesKcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+        notes: dish.reasonShort,
+      },
+      { historyRepo },
+    );
+    await chatRepo.addSystemMessageIfMissing(`meal_${mealId}`, `Logged: ${dish.name}.`);
+    Alert.alert('Added', `${dish.name} logged to your day.`);
+  }, []);
 
   return (
     <Screen scroll>
-      <AppHeader title="Top picks" onBack={() => navigation.goBack()} rightAction={<AppIcon name="sparkles" size={16} />} />
+      <ScreenHeader leftLabel="Home" title="Top picks" onBack={() => navigation.goBack()} rightAction={<Text style={styles.sparkle}>✦</Text>} />
       <View style={styles.wrap}>
-        <Text style={styles.status}>Analysis complete</Text>
-        <Text style={styles.title}>Menupicks</Text>
-        <Text style={styles.subTitle}>Based on your goal and profile</Text>
-        {!result ? <Card><Text style={styles.empty}>No results yet. Run a scan from Scan menu.</Text></Card> : (
+        <Text style={styles.title} maxFontSizeMultiplier={1.2}>Top picks</Text>
+        <Text style={styles.subTitle} maxFontSizeMultiplier={1.2}>Based on your goal and profile</Text>
+        {!result ? (
+          <Card><Text style={styles.empty} maxFontSizeMultiplier={1.2}>No results yet. Run a scan from Scan menu.</Text></Card>
+        ) : (
           <>
-            <Card><Text style={styles.summary}>{result.summaryText}</Text></Card>
-            <Text style={styles.sectionHeader}>👍 Top picks</Text>
-            {result.topPicks.map((item) => <DishRow key={`t_${item.name}`} item={item} onWhy={setWhyText} />)}
-            <Text style={styles.sectionHeader}>⚠️ OK with caution</Text>
-            {result.caution.map((item) => <DishRow key={`c_${item.name}`} item={item} onWhy={setWhyText} />)}
-            <Text style={styles.sectionHeader}>🚫 Better avoid</Text>
-            {result.avoid.map((item) => <DishRow key={`a_${item.name}`} item={item} onWhy={setWhyText} />)}
+            <Card style={styles.summaryCard}><Text style={styles.summary} maxFontSizeMultiplier={1.2}>{result.summaryText}</Text></Card>
+            <Text style={styles.sectionHeader} maxFontSizeMultiplier={1.2}>Top picks</Text>
+            {result.topPicks.map((item) => <DishRow key={`t_${item.name}`} item={item} onWhy={setWhyText} onTakeDish={handleTakeDish} />)}
+            <Text style={styles.sectionHeader} maxFontSizeMultiplier={1.2}>OK with caution</Text>
+            {result.caution.map((item) => <DishRow key={`c_${item.name}`} item={item} onWhy={setWhyText} onTakeDish={handleTakeDish} />)}
+            <Text style={styles.sectionHeader} maxFontSizeMultiplier={1.2}>Better avoid</Text>
+            {result.avoid.map((item) => <DishRow key={`a_${item.name}`} item={item} onWhy={setWhyText} onTakeDish={handleTakeDish} />)}
             <SecondaryButton title="Rescan Menu" onPress={() => navigation.navigate('ScanMenu')} />
-            <Pressable onPress={() => navigation.navigate('Chat', { resultId: result.id })}><Text style={styles.chatLink}>Open chat with Buddy</Text></Pressable>
+            <Pressable onPress={() => navigation.navigate('Chat', { resultId: result.id })} style={styles.chatLinkWrap}>
+              <Text style={styles.chatLink} maxFontSizeMultiplier={1.2}>Open chat with Buddy</Text>
+            </Pressable>
           </>
         )}
       </View>
       <Modal transparent visible={Boolean(whyText)} animationType="slide" onRequestClose={() => setWhyText(null)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setWhyText(null)}>
           <Pressable style={styles.sheet} onPress={() => undefined}>
-            <Text style={styles.sheetTitle}>Why this recommendation?</Text>
-            <Text style={styles.sheetText}>{whyText}</Text>
+            <Text style={styles.sheetTitle} maxFontSizeMultiplier={1.2}>Why this recommendation?</Text>
+            <Text style={styles.sheetText} maxFontSizeMultiplier={1.2}>{whyText}</Text>
             <SecondaryButton title="Close" onPress={() => setWhyText(null)} />
           </Pressable>
         </Pressable>
@@ -109,31 +138,31 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
 }
 
 const styles = StyleSheet.create({
-  wrap: { gap: uiTheme.spacing.sm, paddingBottom: uiTheme.spacing.xl },
-  status: { color: uiTheme.colors.textSecondary, fontSize: 13, textAlign: 'left' },
-  title: { ...typography.h2 },
-  subTitle: { color: uiTheme.colors.textSecondary, fontSize: 14 },
-  empty: { color: uiTheme.colors.textSecondary, fontSize: 17 },
-  summary: { color: uiTheme.colors.textSecondary, fontSize: 16 },
-  sectionHeader: { ...typography.h3, marginTop: 6 },
-  dishCard: { gap: 8 },
-  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
-  dishName: { color: uiTheme.colors.textPrimary, fontSize: 23 / 1.3, fontWeight: '700', flex: 1 },
-  matchText: { color: uiTheme.colors.success, fontSize: 13, fontWeight: '700' },
-  reason: { color: uiTheme.colors.textSecondary, fontSize: 14 },
-  macroRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#EEF1F6', paddingVertical: 8 },
-  macroCell: { alignItems: 'center', flex: 1 },
-  macroLabel: { fontSize: 11, color: '#9CA3AF', fontWeight: '700' },
-  macroValue: { fontSize: 15, color: uiTheme.colors.textPrimary, fontWeight: '700' },
-  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  statusRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  statusOk: { fontSize: 13, color: uiTheme.colors.success },
-  statusConf: { fontSize: 13, color: '#64748B' },
-  actionsRow: { flexDirection: 'row', gap: 8 },
-  actionBtn: { flex: 1, minHeight: 44 },
-  chatLink: { textAlign: 'center', color: uiTheme.colors.accent, fontSize: 14, fontWeight: '600' },
+  wrap: { gap: spec.spacing[12], paddingBottom: spec.spacing[40] },
+  sparkle: { color: appTheme.colors.accent, fontSize: 16 },
+  title: { ...typography.h1 },
+  subTitle: { ...typography.body, color: appTheme.colors.muted },
+  empty: { ...typography.body, color: appTheme.colors.muted },
+  summaryCard: { padding: spec.spacing[20] },
+  summary: { ...typography.body, color: appTheme.colors.muted },
+  sectionHeader: { ...typography.h2, marginTop: spec.spacing[8] },
+  dishCard: { gap: spec.spacing[12] },
+  dishName: { ...typography.h2 },
+  reason: { ...typography.body, color: appTheme.colors.muted },
+  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: spec.spacing[8] },
+  actionsRow: { flexDirection: 'row', alignItems: 'center', gap: spec.spacing[16] },
+  actionBtn: { flex: 1 },
+  whyLink: { ...typography.bodySemibold, color: appTheme.colors.accent },
+  chatLinkWrap: { alignItems: 'center', paddingVertical: spec.spacing[8] },
+  chatLink: { ...typography.bodySemibold, color: appTheme.colors.accent, textAlign: 'center' },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#11182755' },
-  sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: uiTheme.radius.xl, borderTopRightRadius: uiTheme.radius.xl, padding: uiTheme.spacing.md, gap: uiTheme.spacing.sm },
-  sheetTitle: { color: uiTheme.colors.textPrimary, fontSize: 17, fontWeight: '700' },
-  sheetText: { color: uiTheme.colors.textSecondary, fontSize: 17 },
+  sheet: {
+    backgroundColor: appTheme.colors.surface,
+    borderTopLeftRadius: spec.sheetRadius,
+    borderTopRightRadius: spec.sheetRadius,
+    padding: spec.cardPadding,
+    gap: spec.spacing[16],
+  },
+  sheetTitle: { ...typography.bodySemibold },
+  sheetText: { ...typography.body, color: appTheme.colors.muted },
 });
