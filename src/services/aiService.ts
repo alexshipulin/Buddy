@@ -1,0 +1,255 @@
+import { DishRecommendation, MenuScanResult } from '../domain/models';
+import { createId } from '../utils/id';
+
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent';
+
+type GeminiRequest = {
+  contents: Array<{
+    parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }>;
+  }>;
+};
+
+type GeminiResponse = {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{ text?: string }>;
+    };
+  }>;
+  error?: { message?: string; code?: number };
+};
+
+function getApiKey(): string | null {
+  const key = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+  if (!key || key === 'your_key_here' || key.trim() === '') {
+    return null;
+  }
+  return key;
+}
+
+function createMockMenuResult(): MenuScanResult {
+  return {
+    id: createId('scan'),
+    createdAt: new Date().toISOString(),
+    inputImages: [],
+    topPicks: [
+      { name: 'Grilled salmon with greens', reasonShort: 'High protein and healthy fats.', tags: ['High protein', 'Omega-3'] },
+      { name: 'Chicken salad', reasonShort: 'Lean protein with fiber-rich vegetables.', tags: ['High protein', 'Lower calories'] },
+    ],
+    caution: [
+      { name: 'Teriyaki chicken', reasonShort: 'Protein is good, but sauce can add sugar.', tags: ['Lower sugar'] },
+    ],
+    avoid: [
+      { name: 'Deep-fried combo platter', reasonShort: 'Very high energy density.', tags: ['Lower calories'] },
+    ],
+    summaryText: 'Buddy analyzed your menu. Add your API key for AI-powered recommendations.',
+    disclaimerFlag: true,
+  };
+}
+
+function createMockChatResponse(): string {
+  return 'I can help you with meal planning! Add your Gemini API key to enable AI-powered responses.';
+}
+
+async function uriToBase64(uri: string): Promise<string | null> {
+  if (uri.startsWith('data:')) {
+    return uri.split(',')[1] || null;
+  }
+  if (uri.startsWith('file://') || uri.startsWith('http://') || uri.startsWith('https://')) {
+    try {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64 = (reader.result as string)?.split(',')[1];
+          resolve(base64 || null);
+        };
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return null;
+    }
+  }
+  return uri;
+}
+
+async function callGeminiAPI(payload: GeminiRequest): Promise<string> {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    throw new Error('API_KEY_MISSING');
+  }
+
+  const url = `${GEMINI_API_URL}?key=${encodeURIComponent(apiKey)}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorData: GeminiResponse = await response.json().catch(() => ({}));
+    throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+  }
+
+  const data: GeminiResponse = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    throw new Error('Empty response from Gemini');
+  }
+  return text;
+}
+
+function parseMenuAnalysis(text: string, images: string[]): MenuScanResult {
+  try {
+    const parsed = JSON.parse(text) as Partial<MenuScanResult>;
+    return {
+      id: createId('scan'),
+      createdAt: new Date().toISOString(),
+      inputImages: images,
+      topPicks: parsed.topPicks || [],
+      caution: parsed.caution || [],
+      avoid: parsed.avoid || [],
+      summaryText: parsed.summaryText || 'Menu analysis complete.',
+      disclaimerFlag: true,
+    };
+  } catch {
+    return createMockMenuResult();
+  }
+}
+
+export async function analyzeMenu(input: string | string[]): Promise<MenuScanResult> {
+  const images = Array.isArray(input) ? input : [input];
+  const apiKey = getApiKey();
+
+  if (!apiKey) {
+    return createMockMenuResult();
+  }
+
+  try {
+    const firstImage = images[0];
+    if (!firstImage) {
+      return createMockMenuResult();
+    }
+
+    const base64Image = await uriToBase64(firstImage);
+    if (!base64Image) {
+      return createMockMenuResult();
+    }
+
+    const prompt = `Analyze this menu image and return JSON with:
+{
+  "topPicks": [{"name": "...", "reasonShort": "...", "tags": [...]}],
+  "caution": [{"name": "...", "reasonShort": "...", "tags": [...]}],
+  "avoid": [{"name": "...", "reasonShort": "...", "tags": [...]}],
+  "summaryText": "..."
+}`;
+
+    const payload: GeminiRequest = {
+      contents: [
+        {
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                mimeType: 'image/jpeg',
+                data: base64Image,
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const responseText = await callGeminiAPI(payload);
+    return parseMenuAnalysis(responseText, images);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'API_KEY_MISSING') {
+      return createMockMenuResult();
+    }
+    return createMockMenuResult();
+  }
+}
+
+export async function analyzeMealPhoto(imageUri: string): Promise<{ macros: { caloriesKcal: number; proteinG: number; carbsG: number; fatG: number }; description: string }> {
+  const apiKey = getApiKey();
+
+  if (!apiKey) {
+    return {
+      macros: { caloriesKcal: 450, proteinG: 30, carbsG: 40, fatG: 15 },
+      description: 'Meal logged. Add API key for AI analysis.',
+    };
+  }
+
+  try {
+    const base64Image = await uriToBase64(imageUri);
+    if (!base64Image) {
+      return {
+        macros: { caloriesKcal: 450, proteinG: 30, carbsG: 40, fatG: 15 },
+        description: 'Meal logged. Could not process image.',
+      };
+    }
+
+    const prompt = 'Analyze this meal photo and return JSON: {"caloriesKcal": number, "proteinG": number, "carbsG": number, "fatG": number, "description": "..."}';
+
+    const payload: GeminiRequest = {
+      contents: [
+        {
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                mimeType: 'image/jpeg',
+                data: base64Image,
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const responseText = await callGeminiAPI(payload);
+    const parsed = JSON.parse(responseText);
+    return {
+      macros: {
+        caloriesKcal: parsed.caloriesKcal || 450,
+        proteinG: parsed.proteinG || 30,
+        carbsG: parsed.carbsG || 40,
+        fatG: parsed.fatG || 15,
+      },
+      description: parsed.description || 'Meal analyzed.',
+    };
+  } catch {
+    return {
+      macros: { caloriesKcal: 450, proteinG: 30, carbsG: 40, fatG: 15 },
+      description: 'Meal logged. AI analysis unavailable.',
+    };
+  }
+}
+
+export async function askBuddy(message: string, context?: any): Promise<string> {
+  const apiKey = getApiKey();
+
+  if (!apiKey) {
+    return createMockChatResponse();
+  }
+
+  try {
+    const contextText = context ? `Context: ${JSON.stringify(context)}\n\n` : '';
+    const prompt = `${contextText}User question: ${message}\n\nProvide a helpful, concise response about nutrition and meal planning.`;
+
+    const payload: GeminiRequest = {
+      contents: [
+        {
+          parts: [{ text: prompt }],
+        },
+      ],
+    };
+
+    return await callGeminiAPI(payload);
+  } catch {
+    return createMockChatResponse();
+  }
+}

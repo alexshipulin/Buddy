@@ -8,6 +8,7 @@ import { Card } from '../components/Card';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { appTheme } from '../design/theme';
 import { ChatMessage, MenuScanResult } from '../domain/models';
+import { askBuddy as askBuddyAI } from '../services/aiService';
 import { chatRepo, historyRepo, trialRepo } from '../services/container';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
@@ -35,7 +36,9 @@ export function ChatScreen({ navigation, route }: Props): React.JSX.Element {
     if (!question) return;
     if (!isPremium) return navigation.navigate('Paywall', { source: 'chat' });
     await chatRepo.addMessage('user', question);
-    await chatRepo.addMessage('assistant', 'Buddy suggests keeping protein high and portions aligned with your goal.');
+    const context = route.params?.resultId ? await historyRepo.getScanResultById(route.params.resultId) : undefined;
+    const response = await askBuddyAI(question, context);
+    await chatRepo.addMessage('assistant', response);
     setInput('');
     setMessages(await chatRepo.listMessages());
   };

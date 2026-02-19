@@ -15,11 +15,13 @@ export class TrialRepo {
   }
   async incrementDailyScanIfAllowed(nowDate = new Date()): Promise<boolean> {
     const trial = await this.getTrial();
+    // Premium or active trial period bypasses the post-trial daily cap.
     if (trial.isPremium) return true;
     if (trial.trialEndsAt && nowDate.getTime() <= new Date(trial.trialEndsAt).getTime()) return true;
     if (!trial.trialStartsAt) return true;
     const today = toIsoDateOnly(nowDate);
     if (trial.scansUsedTodayDate !== today) {
+      // First scan of a new day resets the counter.
       await this.saveTrial({ ...trial, scansUsedTodayDate: today, scansUsedTodayCount: 1 });
       return true;
     }
@@ -32,6 +34,7 @@ export class TrialRepo {
     if (trial.firstResultAt) return { state: trial, isFirstResult: false };
     const startsAt = nowDate.toISOString();
     const endsAt = new Date(nowDate.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    // Trial starts after the first successful full result.
     const updated: TrialState = { ...trial, firstResultAt: startsAt, trialStartsAt: trial.trialStartsAt ?? startsAt, trialEndsAt: trial.trialEndsAt ?? endsAt };
     await this.saveTrial(updated);
     return { state: updated, isFirstResult: true };

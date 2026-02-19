@@ -18,6 +18,7 @@ export type AnalyzeMenuOutput = { resultId: string; shouldShowPaywallAfterResult
 export async function analyzeMenuUseCase(images: string[], deps: Deps): Promise<AnalyzeMenuOutput> {
   const user = await deps.userRepo.getUser();
   if (!user) throw new Error('User profile is not set');
+  // Post-trial free users are limited to one scan per day.
   const allowed = await deps.trialRepo.incrementDailyScanIfAllowed();
   if (!allowed) throw new DailyScanLimitReachedError();
   const result = await deps.menuProvider.analyzeMenu(images, user);
@@ -31,5 +32,6 @@ export async function analyzeMenuUseCase(images: string[], deps: Deps): Promise<
     imageUris: images,
   });
   const first = await deps.trialRepo.registerFirstResultIfNeeded(new Date());
+  // Product rule: show paywall immediately after the first complete result.
   return { resultId: result.id, shouldShowPaywallAfterResults: first.isFirstResult, trialDaysLeft: deps.trialRepo.getTrialDaysLeft(first.state, new Date()) };
 }
