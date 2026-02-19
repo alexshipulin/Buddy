@@ -86,7 +86,6 @@ export function ChatScreen({ navigation, route }: Props): React.JSX.Element {
           <PrimaryButton title={isPremium || TEST_MODE ? 'Ask Buddy' : 'Upgrade to ask Buddy...'} loading={sending} onPress={() => void askBuddy()} />
           {!isPremium ? <SecondaryButton title="See Premium" onPress={() => navigation.navigate('Paywall', { source: 'chat' })} /> : null}
         </View>
-        <Text style={styles.disclaimer}>Educational guidance only. Not medical advice.</Text>
       </View>
     </AppScreen>
   );
@@ -107,5 +106,4 @@ const styles = StyleSheet.create({
   systemMessage: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.small },
   composer: { gap: appTheme.spacing.sm, marginTop: appTheme.spacing.sm },
   input: { borderWidth: 1, borderColor: appTheme.colors.border, borderRadius: appTheme.radius.md, paddingHorizontal: appTheme.spacing.sm, paddingVertical: 10, backgroundColor: '#FFFFFF' },
-  disclaimer: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.small },
 });

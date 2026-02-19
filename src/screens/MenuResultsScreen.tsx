@@ -51,13 +51,17 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
   const [whyText, setWhyText] = React.useState<string | null>(null);
   const [paywallHandled, setPaywallHandled] = React.useState(false);
   React.useEffect(() => { void (async () => {
-    if (USE_MOCK_DATA) {
-      setResult(mockTopPicksResult);
+    if (route.params?.resultId) {
+      const byId = await historyRepo.getScanResultById(route.params.resultId);
+      if (byId) return setResult(byId);
+    }
+    const first = (await historyRepo.listRecent(20)).find((i) => i.type === 'menu_scan');
+    const latestResult = first ? await historyRepo.getScanResultById(first.payloadRef) : null;
+    if (latestResult) {
+      setResult(latestResult);
       return;
     }
-    if (route.params?.resultId) return setResult(await historyRepo.getScanResultById(route.params.resultId));
-    const first = (await historyRepo.listRecent(20)).find((i) => i.type === 'menu_scan');
-    setResult(first ? await historyRepo.getScanResultById(first.payloadRef) : null);
+    setResult(USE_MOCK_DATA ? mockTopPicksResult : null);
   })(); }, [route.params?.resultId]);
   React.useEffect(() => {
     if (!result || paywallHandled || !route.params?.paywallAfterOpen) return;

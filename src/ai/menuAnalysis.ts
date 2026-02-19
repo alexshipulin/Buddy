@@ -77,6 +77,7 @@ Allergies: ${params.allergies.join(", ") || "none"}
 Task:
 - Analyze the menu photo.
 - Return dishes in 3 groups: topPicks, caution, avoid.
+- Return up to 3 dishes per group.
 - Each dish: name, short reason, 0-3 tags.
 - Add warnings array.
 `;
@@ -100,7 +101,7 @@ Task:
       response_mime_type: "application/json",
       response_json_schema: MENU_SCHEMA,
       temperature: 0.2,
-      maxOutputTokens: 400,
+      maxOutputTokens: 1200,
     },
   };
 
@@ -135,6 +136,7 @@ Allergies: ${params.allergies.join(", ") || "none"}
 Task:
 - Analyze the menu photo.
 - Return dishes in 3 groups: topPicks, caution, avoid.
+- Return up to 3 dishes per group.
 - Each dish: name, short reason, 0-3 tags.
 - Add warnings array.`;
 
@@ -157,7 +159,7 @@ Task:
         response_mime_type: "application/json",
         response_json_schema: MENU_SCHEMA,
         temperature: 0.2,
-        maxOutputTokens: 400,
+        maxOutputTokens: 1200,
       },
     };
 
