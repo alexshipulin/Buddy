@@ -27,8 +27,14 @@ export default function App(): React.JSX.Element {
 
   React.useEffect(() => {
     const bootstrap = async (): Promise<void> => {
-      await seedMockDataIfNeeded({ userRepo, historyRepo, trialRepo, chatRepo });
-      setIsBootstrapped(true);
+      try {
+        await seedMockDataIfNeeded({ userRepo, historyRepo, trialRepo, chatRepo });
+      } catch (error) {
+        // Avoid blank screen if bootstrap fails; continue with app startup.
+        console.warn('Seed bootstrap failed, continuing without seed data.', error);
+      } finally {
+        setIsBootstrapped(true);
+      }
     };
     void bootstrap();
   }, []);
