@@ -1,5 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleProp, StyleSheet, Text, ViewStyle } from 'react-native';
+import { spec } from '../design/spec';
 import { appTheme } from '../design/theme';
 
 type Props = { title: string; onPress?: () => void; style?: StyleProp<ViewStyle>; disabled?: boolean; loading?: boolean };
@@ -11,9 +12,9 @@ export function PrimaryButton({ title, onPress, style, disabled, loading = false
       onPress={onPress}
       style={({ pressed }) => [styles.button, style, pressed && !isDisabled ? styles.pressed : null, isDisabled ? styles.disabled : null]}
       disabled={isDisabled}
-      hitSlop={4}
+      hitSlop={Math.max(0, (spec.minTouchTarget - spec.primaryButtonHeight) / 2)}
     >
-      {loading ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Text style={styles.text}>{title}</Text>}
+      {loading ? <ActivityIndicator color={appTheme.colors.primaryText} size="small" /> : <Text style={styles.text} maxFontSizeMultiplier={1.2}>{title}</Text>}
     </Pressable>
   );
 }
@@ -21,14 +22,18 @@ export function PrimaryButton({ title, onPress, style, disabled, loading = false
 const styles = StyleSheet.create({
   button: {
     backgroundColor: appTheme.colors.primaryButton,
-    borderRadius: appTheme.radius.pill,
-    paddingHorizontal: appTheme.spacing.lg,
-    paddingVertical: 12,
-    minHeight: 48,
+    borderRadius: spec.primaryButtonRadius,
+    paddingHorizontal: spec.primaryButtonPaddingHorizontal,
+    minHeight: spec.primaryButtonHeight,
     alignItems: 'center',
     justifyContent: 'center',
+    ...appTheme.shadows.card,
   },
-  text: { color: '#FFFFFF', fontWeight: '700', fontSize: appTheme.typography.body.fontSize },
-  pressed: { opacity: 0.9 },
-  disabled: { opacity: 0.45 },
+  text: {
+    color: appTheme.colors.primaryText,
+    fontWeight: appTheme.typography.bodySemibold.fontWeight,
+    fontSize: appTheme.typography.bodySemibold.fontSize,
+  },
+  pressed: { opacity: 0.92 },
+  disabled: { backgroundColor: appTheme.colors.disabledBg, opacity: 1, shadowOpacity: 0, elevation: 0 },
 });

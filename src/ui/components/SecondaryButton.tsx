@@ -33,7 +33,7 @@ const styles = StyleSheet.create({
     borderColor: appTheme.colors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: appTheme.spacing[24],
+    paddingHorizontal: spec.primaryButtonPaddingHorizontal,
   },
   text: {
     fontSize: appTheme.typography.bodySemibold.fontSize,

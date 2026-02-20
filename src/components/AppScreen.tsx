@@ -13,6 +13,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { spec } from '../design/spec';
 import { appTheme } from '../design/theme';
 
 type Props = ViewProps & {
@@ -47,8 +48,8 @@ export function AppScreen({
   const bottomInset = respectInsets ? insets.bottom : 0;
   const paddingStyle: ViewStyle = padded
     ? {
-        paddingHorizontal: 20,
-        paddingBottom: bottomInset + 16,
+        paddingHorizontal: spec.screenPaddingHorizontal,
+        paddingBottom: bottomInset + spec.screenPaddingBottomOffset,
       }
     : { paddingBottom: bottomInset };
   const backgroundColor = background === 'surface' ? appTheme.colors.surface : appTheme.colors.background;

@@ -5,16 +5,16 @@ export const mockTopPicksResult: MenuScanResult = {
   createdAt: new Date().toISOString(),
   inputImages: [],
   topPicks: [
-    { name: 'Grilled Salmon Bowl', reasonShort: 'Perfect for your cutting goal: lean protein and healthy fats.', tags: ['High Protein', 'Low Carb'] },
-    { name: 'Roasted Chicken Breast', reasonShort: 'Lean source of protein with lower calories.', tags: ['Lean Protein'] },
-    { name: 'Egg White Omelet', reasonShort: 'Great low-calorie option rich in protein.', tags: ['Vegetarian', 'Keto Friendly'] },
+    { name: 'Grilled Salmon Bowl', reasonShort: 'Perfect for your cutting goal. High protein, healthy fats.', tags: ['High Protein', 'Low Carb'], matchPercent: 98, macros: { caloriesKcal: 450, proteinG: 38, carbsG: 12, fatG: 22 } },
+    { name: 'Roasted Chicken Breast', reasonShort: 'Lean source of protein, minimal added fats.', tags: ['Lean Protein'], matchPercent: 95, macros: { caloriesKcal: 320, proteinG: 42, carbsG: 4, fatG: 8 } },
+    { name: 'Egg White Omelet', reasonShort: 'Great low-cal option loaded with micronutrients.', tags: ['Vegetarian', 'Keto Friendly'], matchPercent: 92, macros: { caloriesKcal: 280, proteinG: 25, carbsG: 8, fatG: 14 }, warningLabel: 'Contains Eggs' },
   ],
   caution: [
-    { name: 'Caesar Salad', reasonShort: 'Good greens, but dressing can increase fats.', tags: ['High Fat'] },
-    { name: 'Beef Burger (No Bun)', reasonShort: 'Protein dense, but saturated fat is higher.', tags: ['High Cal'] },
+    { name: 'Caesar Salad', reasonShort: 'Ask for dressing on the side.', tags: ['High Fat'] },
+    { name: 'Beef Burger (No Bun)', reasonShort: 'Good protein, but high saturated fat.', tags: ['High Cal'] },
   ],
   avoid: [
-    { name: 'Fettuccine Alfredo', reasonShort: 'High calories and refined carbs.', tags: ['High Carb'] },
+    { name: 'Fettuccine Alfredo', reasonShort: 'Very high calories & carbs.', tags: [] },
     { name: 'Deep-fried Combo', reasonShort: 'Energy dense and heavy in trans fats.', tags: ['Deep Fried'] },
   ],
   summaryText: 'Menu analyzed for your goal and dietary profile.',

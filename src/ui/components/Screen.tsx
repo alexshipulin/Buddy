@@ -19,6 +19,10 @@ type Props = {
   scroll?: boolean;
   keyboardAvoiding?: boolean;
   padded?: boolean;
+  /** Max content width on wide screens (default: 460). Set to 0 to disable. */
+  maxContentWidth?: number;
+  /** Padding bottom offset when BottomCTA is present */
+  bottomCTAPadding?: number;
   contentContainerStyle?: StyleProp<ViewStyle>;
   style?: StyleProp<ViewStyle>;
 };
@@ -28,27 +32,38 @@ export function Screen({
   scroll = false,
   keyboardAvoiding = false,
   padded = true,
+  maxContentWidth = 460,
+  bottomCTAPadding = 0,
   contentContainerStyle,
   style,
 }: Props): React.JSX.Element {
   const insets = useSafeAreaInsets();
+  const basePaddingBottom = bottomCTAPadding > 0 ? bottomCTAPadding : insets.bottom + spec.screenPaddingBottomOffset;
   const containerPadding: ViewStyle = padded
     ? {
         paddingHorizontal: spec.screenPaddingHorizontal,
-        paddingBottom: insets.bottom + spec.screenPaddingBottomOffset,
+        paddingBottom: basePaddingBottom,
       }
-    : { paddingBottom: insets.bottom };
+    : { paddingBottom: basePaddingBottom };
+
+  const contentWrapperStyle: ViewStyle = maxContentWidth > 0
+    ? {
+        maxWidth: maxContentWidth,
+        width: '100%',
+        alignSelf: 'center',
+      }
+    : {};
 
   const content = scroll ? (
     <ScrollView
       style={styles.flex}
       keyboardShouldPersistTaps="handled"
-      contentContainerStyle={[containerPadding, styles.scrollGrow, contentContainerStyle]}
+      contentContainerStyle={[containerPadding, styles.scrollGrow, contentWrapperStyle, contentContainerStyle]}
     >
       {children}
     </ScrollView>
   ) : (
-    <View style={[styles.flex, containerPadding, contentContainerStyle]}>{children}</View>
+    <View style={[styles.flex, containerPadding, contentWrapperStyle, contentContainerStyle]}>{children}</View>
   );
 
   if (!keyboardAvoiding) {

@@ -46,7 +46,7 @@ export function HomeScreen({ navigation }: Props): React.JSX.Element {
   const hasTargets = Boolean(user?.baseParams);
 
   return (
-    <Screen scroll>
+    <Screen scroll maxContentWidth={460}>
       <View style={styles.scroll}>
         <View style={styles.header}>
           <View>
@@ -115,32 +115,39 @@ const styles = StyleSheet.create({
   avatar: { width: 44, height: 44, borderRadius: 22, overflow: 'hidden', minWidth: spec.minTouchTarget, minHeight: spec.minTouchTarget },
   avatarImage: { width: '100%', height: '100%' },
   greeting: { ...typography.hero },
-  subtitleHeader: { ...typography.body, color: appTheme.colors.muted, marginTop: 4 },
+  subtitleHeader: { ...typography.body, color: appTheme.colors.muted, marginTop: spec.spacing[4] },
   todayCard: { gap: spec.spacing[16] },
   todayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  eatenChip: { backgroundColor: appTheme.colors.accentSoft, borderRadius: 14, paddingHorizontal: 12, height: 28, alignItems: 'center', justifyContent: 'center' },
+  eatenChip: {
+    backgroundColor: appTheme.colors.accentSoft,
+    borderRadius: spec.chipSmallRadius,
+    paddingHorizontal: spec.chipSmallPaddingX,
+    height: spec.chipSmallHeight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   eatenText: { color: appTheme.colors.accent, ...appTheme.typography.caption, fontWeight: '700' },
   cardTitle: { ...typography.h2 },
   macroRow: { flexDirection: 'row', alignItems: 'stretch', justifyContent: 'space-between' },
-  macroCell: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6 },
+  macroCell: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spec.spacing[8] },
   macroLabel: { ...typography.overline, color: appTheme.colors.muted },
   macroValue: { ...typography.h1 },
-  macroDivider: { width: 1, backgroundColor: appTheme.colors.border, marginHorizontal: 2 },
+  macroDivider: { width: 1, backgroundColor: appTheme.colors.border, marginHorizontal: spec.spacing[4] },
   ctaBox: { backgroundColor: appTheme.colors.infoSoft, borderRadius: spec.inputRadius, padding: spec.spacing[12], gap: spec.spacing[12] },
   ctaText: { ...typography.caption, color: appTheme.colors.muted, textAlign: 'center' },
   actionGrid: { flexDirection: 'row', gap: spec.spacing[16] },
   actionItem: { flex: 1 },
-  actionCard: { minHeight: 165, alignItems: 'center', justifyContent: 'center', gap: 14 },
-  actionIconWrap: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
+  actionCard: { minHeight: 165, alignItems: 'center', justifyContent: 'center', gap: spec.spacing[16] },
+  actionIconWrap: { width: 56, height: 56, borderRadius: spec.primaryButtonRadius, alignItems: 'center', justifyContent: 'center' },
   actionIconPurple: { backgroundColor: appTheme.colors.accentSoft },
-  actionIconOrange: { backgroundColor: '#FFF1E2' },
+  actionIconOrange: { backgroundColor: appTheme.colors.warningSoft },
   actionTitle: { ...typography.h2, textAlign: 'center' },
   recentHeader: { ...typography.h2, marginTop: spec.spacing[4] },
   recentCard: { flexDirection: 'row', gap: spec.spacing[12], alignItems: 'center', minHeight: 88 },
   recentMain: { flex: 1 },
   recentTitle: { ...typography.bodySemibold },
-  recentTime: { ...typography.caption, color: appTheme.colors.muted, marginTop: 2 },
-  recentTag: { borderRadius: spec.chipRadius, paddingHorizontal: 12, paddingVertical: 4, ...appTheme.typography.caption, fontWeight: '700', overflow: 'hidden' },
+  recentTime: { ...typography.caption, color: appTheme.colors.muted, marginTop: spec.spacing[4] },
+  recentTag: { borderRadius: spec.chipRadius, paddingHorizontal: spec.chipPaddingX, paddingVertical: spec.spacing[4], ...appTheme.typography.caption, fontWeight: '700', overflow: 'hidden' },
   recentTagMenu: { color: appTheme.colors.info, backgroundColor: appTheme.colors.infoSoft },
   recentTagMeal: { color: appTheme.colors.success, backgroundColor: appTheme.colors.successSoft },
   disclaimer: { marginTop: spec.spacing[16], textAlign: 'center', ...typography.caption, color: appTheme.colors.muted },

@@ -39,7 +39,7 @@ export function PaywallScreen({ navigation, route }: Props): React.JSX.Element {
         <Card style={styles.planCard}>
           <Text style={styles.planName}>Yearly</Text>
           <Text style={styles.planPrice}>$39.99/year</Text>
-          <Text style={styles.planHint}>Cancel anytime. Prices are mock for MVP.</Text>
+          <Text style={styles.planHint}>Cancel anytime.</Text>
         </Card>
         <PrimaryButton title="Start Premium" loading={loading} onPress={() => void onStartPremium()} disabled={loading} />
         <SecondaryButton title="Not now" onPress={() => navigation.goBack()} />

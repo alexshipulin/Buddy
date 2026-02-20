@@ -138,7 +138,7 @@ const styles = StyleSheet.create({
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: spec.spacing[20] },
   addOtherModal: { backgroundColor: appTheme.colors.surface, borderRadius: spec.cardRadius, padding: spec.cardPadding, gap: spec.spacing[16] },
   addOtherModalTitle: { ...typography.h2 },
-  addOtherInput: { borderWidth: 1, borderColor: appTheme.colors.border, borderRadius: spec.inputRadius, paddingHorizontal: spec.inputPaddingX, paddingVertical: 12, fontSize: appTheme.typography.body.fontSize },
+  addOtherInput: { borderWidth: 1, borderColor: appTheme.colors.border, borderRadius: spec.inputRadius, paddingHorizontal: spec.inputPaddingX, paddingVertical: spec.spacing[12], fontSize: appTheme.typography.body.fontSize, minHeight: spec.inputHeight },
   addOtherModalActions: { flexDirection: 'row', alignItems: 'center', gap: spec.spacing[16] },
   addOtherModalBtn: { flex: 1 },
   addOtherCancel: { color: appTheme.colors.muted, ...appTheme.typography.bodySemibold },

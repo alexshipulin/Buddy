@@ -27,7 +27,17 @@ export type HistoryItem = {
   payloadRef: string;
   imageUris?: string[];
 };
-export type DishRecommendation = { name: string; reasonShort: string; tags: string[] };
+export type DishRecommendation = {
+  name: string;
+  reasonShort: string;
+  tags: string[];
+  /** Optional: from AI or backend. When present, macro grid is shown. */
+  macros?: MacroTotals;
+  /** Optional: 0–100 match score for badge. */
+  matchPercent?: number;
+  /** Optional: e.g. "Contains Eggs". When set, shown instead of "Allergen safe". */
+  warningLabel?: string;
+};
 export type MenuScanResult = {
   id: string;
   createdAt: string;

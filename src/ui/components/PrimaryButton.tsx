@@ -41,7 +41,7 @@ const styles = StyleSheet.create({
     backgroundColor: appTheme.colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: appTheme.spacing[24],
+    paddingHorizontal: spec.primaryButtonPaddingHorizontal,
     ...appTheme.shadows.card,
   },
   text: {

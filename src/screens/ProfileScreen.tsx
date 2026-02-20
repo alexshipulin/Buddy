@@ -11,6 +11,7 @@ import { ScreenHeader } from '../components/ScreenHeader';
 import { AppIcon } from '../ui/components/AppIcon';
 import { Card } from '../ui/components/Card';
 import { PrimaryButton } from '../ui/components/PrimaryButton';
+import { BottomCTA } from '../ui/components/BottomCTA';
 import { Screen } from '../ui/components/Screen';
 import { SelectField } from '../ui/components/SelectField';
 import { SegmentedControl } from '../ui/components/SegmentedControl';
@@ -21,8 +22,9 @@ import { typography } from '../ui/typography';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Profile'>;
 
+const BOTTOM_CTA_HEIGHT = 56 + spec.screenPaddingBottomOffset * 2 + 16;
+
 export function ProfileScreen({ navigation }: Props): React.JSX.Element {
-  const insets = useSafeAreaInsets();
   const [user, setUser] = React.useState<UserProfile | null>(null);
   const [trialText, setTrialText] = React.useState('Free');
   const [height, setHeight] = React.useState('');
@@ -82,12 +84,13 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
   };
 
   return (
-    <Screen keyboardAvoiding>
-      <ScreenHeader leftLabel="Home" title="Profile" onBack={() => navigation.goBack()} rightAction={<AppIcon name="profile" size={16} />} />
+    <Screen keyboardAvoiding bottomCTAPadding={BOTTOM_CTA_HEIGHT}>
+      <ScreenHeader leftLabel="Home" title="Profile" onBack={() => navigation.goBack()} />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.wrap}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
         <Card>
           <Text style={styles.sectionLabel}>ACCOUNT</Text>
@@ -151,9 +154,9 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
         </Card>
         <Text style={styles.disclaimer} maxFontSizeMultiplier={1.2}>Disclaimer: This app is for informational purposes only and does not constitute medical advice.</Text>
       </ScrollView>
-      <View style={[styles.pinnedBottom, { paddingBottom: insets.bottom + spec.screenPaddingBottomOffset }]}>
+      <BottomCTA>
         <PrimaryButton title="Save Changes" onPress={() => void save()} />
-      </View>
+      </BottomCTA>
     </Screen>
   );
 }
@@ -161,17 +164,17 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
   wrap: { gap: spec.spacing[16], paddingBottom: spec.spacing[24] },
-  sectionLabel: { ...typography.overline, color: appTheme.colors.muted, marginBottom: 10 },
+  sectionLabel: { ...typography.overline, color: appTheme.colors.muted, marginBottom: spec.spacing[8] },
   rowBetween: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    minHeight: 42,
+    minHeight: spec.minTouchTarget,
     borderTopWidth: 1,
     borderTopColor: appTheme.colors.border,
   },
   fieldTitle: { ...typography.body, color: appTheme.colors.textPrimary, fontWeight: '500' },
-  guestPill: { backgroundColor: appTheme.colors.border, borderRadius: spec.chipRadius, paddingHorizontal: 10, paddingVertical: 4 },
+  guestPill: { backgroundColor: appTheme.colors.border, borderRadius: spec.chipRadius, paddingHorizontal: spec.chipPaddingX, paddingVertical: spec.spacing[4] },
   guestText: { ...appTheme.typography.caption, color: appTheme.colors.ink, fontWeight: '700' },
   trialText: { color: appTheme.colors.success, fontWeight: '700' },
   profileLink: {
@@ -183,21 +186,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spec.spacing[12],
-    gap: 10,
+    gap: spec.spacing[8],
   },
   linkBody: { flex: 1 },
   linkTitle: { ...typography.bodySemibold },
   linkSubtitle: { ...typography.caption, color: appTheme.colors.muted },
-  chevron: { color: appTheme.colors.muted, fontWeight: '700', fontSize: 16 },
+  chevron: { color: appTheme.colors.muted, fontWeight: '700', fontSize: appTheme.typography.callout.fontSize },
   paramsContent: { gap: 0 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spec.spacing[12] },
   gridItem: { width: '48%', minWidth: 0 },
   inputLabel: { ...typography.caption, color: appTheme.colors.muted },
-  segmentWrap: { marginTop: spec.spacing[12], marginBottom: spec.spacing[16], gap: 8 },
-  premiumCard: { alignItems: 'center', gap: 8, paddingVertical: spec.spacing[20] },
+  segmentWrap: { marginTop: spec.spacing[12], marginBottom: spec.spacing[16], gap: spec.spacing[8] },
+  premiumCard: { alignItems: 'center', gap: spec.spacing[8], paddingVertical: spec.spacing[20] },
   premiumTitle: { ...typography.h2, textAlign: 'center' },
-  premiumSubtitle: { ...typography.body, color: appTheme.colors.muted, textAlign: 'center', marginBottom: 6 },
-  legalCard: { gap: 6 },
+  premiumSubtitle: { ...typography.body, color: appTheme.colors.muted, textAlign: 'center', marginBottom: spec.spacing[8] },
+  legalCard: { gap: spec.spacing[8] },
   disclaimer: { ...typography.caption, color: appTheme.colors.muted, textAlign: 'center' },
-  pinnedBottom: { paddingHorizontal: spec.screenPaddingHorizontal, backgroundColor: appTheme.colors.background, paddingTop: spec.spacing[12] },
 });

@@ -1,4 +1,4 @@
-import { colors, radius, spacing, cardShadow, typographyTokens } from './tokens';
+import { colors, radius, spacing, spacingScale, cardShadow, typographyTokens } from './tokens';
 
 export const appTheme = {
   colors: {
@@ -13,16 +13,22 @@ export const appTheme = {
     accentSoft: colors.accentSoft,
     success: colors.success,
     successSoft: colors.successSoft,
+    warning: colors.warning,
+    warningSoft: colors.warningSoft,
+    danger: colors.danger,
+    dangerSoft: colors.dangerSoft,
     border: colors.border,
     progressTrack: colors.border,
   },
   spacing: {
     ...spacing,
-    xs: spacing[4],
-    sm: spacing[8],
-    md: spacing[16],
-    lg: spacing[20],
-    xl: spacing[24],
+    xs: spacingScale.xs,
+    sm: spacingScale.sm,
+    md: spacingScale.md,
+    lg: spacingScale.lg,
+    xl: spacingScale.xl,
+    '2xl': spacingScale['2xl'],
+    '3xl': spacingScale['3xl'],
   },
   radius: {
     ...radius,

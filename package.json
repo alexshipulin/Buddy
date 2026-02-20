@@ -8,7 +8,8 @@
     "ios": "expo run:ios",
     "android": "expo run:android",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && echo \"✅ Check passed. Run 'npm start' to test in simulator. See UI_QA.md for checklist.\""
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

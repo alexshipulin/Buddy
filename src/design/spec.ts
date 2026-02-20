@@ -26,6 +26,7 @@ export const spec = {
   /** Buttons */
   primaryButtonHeight: 56,
   primaryButtonRadius: radius.button,
+  primaryButtonPaddingHorizontal: spacing[16],
 
   /** Chips */
   chipHeight: 32,

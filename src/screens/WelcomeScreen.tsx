@@ -39,14 +39,20 @@ export function WelcomeScreen({ navigation }: Props): React.JSX.Element {
           },
         ]}
       >
-        <Text style={styles.title} maxFontSizeMultiplier={1.2}>Pick the best dish fast</Text>
-        <Text style={styles.subtitle} maxFontSizeMultiplier={1.2}>
-          Scan a menu and get simple picks that fit your goal and preferences.
-        </Text>
-        <PrimaryButton title="Get started" onPress={() => navigation.navigate('GoalSelection')} style={styles.cta} />
-        <Pressable onPress={() => navigation.navigate('SignInNudge', { source: 'manual' })} style={styles.linkWrap}>
-          <Text style={styles.link} maxFontSizeMultiplier={1.2}>Already have an account? Log in</Text>
-        </Pressable>
+        <View style={styles.bottomSheetContent}>
+          <View style={styles.textBlock}>
+            <Text style={styles.title} maxFontSizeMultiplier={1.2}>Pick the best dish fast</Text>
+            <Text style={styles.subtitle} maxFontSizeMultiplier={1.2}>
+              Scan a menu and get simple picks that fit your goal and preferences.
+            </Text>
+          </View>
+          <View style={styles.actionsBlock}>
+            <PrimaryButton title="Get started" onPress={() => navigation.navigate('GoalSelection')} style={styles.cta} />
+            <Pressable onPress={() => navigation.navigate('SignInNudge', { source: 'manual' })} style={styles.linkWrap}>
+              <Text style={styles.link} maxFontSizeMultiplier={1.2}>Already have an account? Log in</Text>
+            </Pressable>
+          </View>
+        </View>
       </View>
     </View>
   );
@@ -73,6 +79,20 @@ const styles = StyleSheet.create({
     backgroundColor: appTheme.colors.surface,
     borderTopLeftRadius: spec.sheetRadius,
     borderTopRightRadius: spec.sheetRadius,
+    maxHeight: '60%',
+    minHeight: 320,
+  },
+  bottomSheetContent: {
+    flex: 1,
+    justifyContent: 'space-between',
+    maxWidth: 460,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  textBlock: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    paddingTop: spec.spacing[8],
   },
   title: {
     ...typography.hero,
@@ -83,11 +103,13 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: appTheme.colors.muted,
     textAlign: 'center',
-    marginBottom: spec.spacing[24],
     maxWidth: 320,
     alignSelf: 'center',
   },
-  cta: { marginBottom: 14 },
+  actionsBlock: {
+    paddingTop: spec.spacing[24],
+  },
+  cta: { marginBottom: spec.spacing[16] },
   linkWrap: { alignItems: 'center', paddingVertical: spec.spacing[8] },
   link: {
     ...typography.body,
