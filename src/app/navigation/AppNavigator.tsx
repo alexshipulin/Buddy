@@ -25,7 +25,7 @@ export function AppNavigator(): React.JSX.Element {
         headerStyle: { backgroundColor: 'transparent' },
         headerShadowVisible: false,
         headerTintColor: appTheme.colors.textPrimary,
-        contentStyle: { backgroundColor: 'transparent' },
+        contentStyle: { backgroundColor: appTheme.colors.background },
       }}
     >
       <Stack.Screen name="Welcome" component={WelcomeScreen} />

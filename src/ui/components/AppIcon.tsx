@@ -5,12 +5,13 @@ import { uiTheme } from '../theme';
 
 type IconName = 'scan' | 'meal' | 'profile' | 'diet' | 'sparkles' | 'camera';
 
-/** Material Icons (filled) for goal cards: 24×24, centered in 44px circle */
+/** Material Icons (filled). Goal cards: 24 in 44px circle; Home tiles: 24×24. */
 const MATERIAL_ICON_NAMES: Partial<Record<IconName, string>> = {
   diet: 'local-fire-department',       // Lose fat
   sparkles: 'local-florist',          // Maintain weight
-  meal: 'fitness-center',             // Gain muscle
+  meal: 'fitness-center',             // Gain muscle / Track meal
   profile: 'restaurant',               // Eat healthier
+  scan: 'document-scanner',            // Scan menu
 };
 
 type Props = {
@@ -47,13 +48,15 @@ export function AppIcon({ name, size = 20 }: Props): React.JSX.Element {
     return uiTheme.colors.accent;
   };
 
-  const containerSize = 44;
-  const iconSize = 24;
+  const containerSize = size !== undefined && size !== 20 ? size : 44;
+  const iconSize = size !== undefined && size !== 20 ? size : 24;
+
+  const materialCast = materialName as 'local-fire-department' | 'local-florist' | 'fitness-center' | 'restaurant' | 'document-scanner';
 
   if (materialName != null) {
     return (
       <View style={[styles.wrap, { width: containerSize, height: containerSize, borderRadius: containerSize / 2, backgroundColor: getBackgroundColor() }]}>
-        <MaterialIcons name={materialName as 'local-fire-department' | 'local-florist' | 'fitness-center' | 'restaurant'} size={iconSize} color={getColor()} />
+        <MaterialIcons name={materialCast} size={iconSize} color={getColor()} />
       </View>
     );
   }

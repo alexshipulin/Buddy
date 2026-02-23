@@ -104,10 +104,9 @@ export function Screen({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: 'transparent' },
+  root: { flex: 1, backgroundColor: appTheme.colors.background },
   flex: { flex: 1 },
   scrollGrow: { flexGrow: 1 },
-  /** White background only for ScrollView content, not for root (so header/bottom CTA are transparent) */
   scrollBg: { backgroundColor: appTheme.colors.background },
-  contentBg: { backgroundColor: 'transparent' },
+  contentBg: { backgroundColor: appTheme.colors.background },
 });

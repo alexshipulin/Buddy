@@ -83,13 +83,13 @@ export function HomeScreen({ navigation }: Props): React.JSX.Element {
         <View style={styles.actionGrid}>
           <Pressable onPress={() => navigation.navigate('ScanMenu')} style={styles.actionItem}>
             <Card style={styles.actionCard}>
-              <View style={[styles.actionIconWrap, styles.actionIconPurple]}><AppIcon name="scan" /></View>
+              <View style={[styles.actionIconWrap, styles.actionIconPurple]}><AppIcon name="scan" size={24} /></View>
               <Text style={styles.actionTitle} maxFontSizeMultiplier={1.2}>Scan menu</Text>
             </Card>
           </Pressable>
           <Pressable onPress={() => navigation.navigate('TrackMeal')} style={styles.actionItem}>
             <Card style={styles.actionCard}>
-              <View style={[styles.actionIconWrap, styles.actionIconOrange]}><AppIcon name="meal" /></View>
+              <View style={[styles.actionIconWrap, styles.actionIconOrange]}><AppIcon name="meal" size={24} /></View>
               <Text style={styles.actionTitle} maxFontSizeMultiplier={1.2}>Track meal</Text>
             </Card>
           </Pressable>
@@ -138,7 +138,7 @@ const styles = StyleSheet.create({
   actionGrid: { flexDirection: 'row', gap: spec.spacing[16] },
   actionItem: { flex: 1 },
   actionCard: { minHeight: 165, alignItems: 'center', justifyContent: 'center', gap: spec.spacing[16] },
-  actionIconWrap: { width: 56, height: 56, borderRadius: spec.primaryButtonRadius, alignItems: 'center', justifyContent: 'center' },
+  actionIconWrap: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   actionIconPurple: { backgroundColor: appTheme.colors.accentSoft },
   actionIconOrange: { backgroundColor: appTheme.colors.warningSoft },
   actionTitle: { ...typography.h2, textAlign: 'center' },
