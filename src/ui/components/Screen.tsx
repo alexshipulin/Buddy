@@ -7,10 +7,12 @@ import {
   StyleProp,
   StyleSheet,
   TouchableWithoutFeedback,
+  useWindowDimensions,
   View,
   ViewStyle,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getContentMaxWidth, getPagePaddingX, layout } from '../../design/layout';
 import { spec } from '../../design/spec';
 import { appTheme } from '../../design/theme';
 
@@ -19,7 +21,16 @@ type Props = {
   scroll?: boolean;
   keyboardAvoiding?: boolean;
   padded?: boolean;
-  /** Max content width on wide screens (default: 460). Set to 0 to disable. */
+  /**
+   * Apply top safe-area spacing for content screens.
+   * Disable (`false`) when a dedicated header already handles top safe area.
+   */
+  safeTop?: boolean;
+  /** Keep bottom safe-area spacing for non-CTA content */
+  safeBottom?: boolean;
+  /** Reserve content space for fixed BottomCTA */
+  hasBottomCTA?: boolean;
+  /** Optional override for tablet max width */
   maxContentWidth?: number;
   /** Padding bottom offset when BottomCTA is present */
   bottomCTAPadding?: number;
@@ -32,23 +43,34 @@ export function Screen({
   scroll = false,
   keyboardAvoiding = false,
   padded = true,
-  maxContentWidth = 460,
+  safeTop = true,
+  safeBottom = true,
+  hasBottomCTA = false,
+  maxContentWidth,
   bottomCTAPadding = 0,
   contentContainerStyle,
   style,
 }: Props): React.JSX.Element {
+  // Audit note: previous wrapper used a fixed max width on iPhone and had no default top safe-area inset.
   const insets = useSafeAreaInsets();
-  const basePaddingBottom = bottomCTAPadding > 0 ? bottomCTAPadding : insets.bottom + spec.screenPaddingBottomOffset;
+  const { width } = useWindowDimensions();
+  const pagePaddingX = getPagePaddingX(width);
+  const topPadding = safeTop ? insets.top + layout.topContentOffset : 0;
+  const reservedBottomForCTA = hasBottomCTA ? insets.bottom + spec.primaryButtonHeight + layout.itemSpacingY + layout.bottomContentOffset : 0;
+  const safeBottomPadding = safeBottom ? insets.bottom + layout.bottomContentOffset : 0;
+  const basePaddingBottom = bottomCTAPadding > 0 ? bottomCTAPadding : Math.max(safeBottomPadding, reservedBottomForCTA);
   const containerPadding: ViewStyle = padded
     ? {
-        paddingHorizontal: spec.screenPaddingHorizontal,
+        paddingHorizontal: pagePaddingX,
+        paddingTop: topPadding,
         paddingBottom: basePaddingBottom,
       }
-    : { paddingBottom: basePaddingBottom };
+    : { paddingTop: topPadding, paddingBottom: basePaddingBottom };
 
-  const contentWrapperStyle: ViewStyle = maxContentWidth > 0
+  const contentMaxWidth = getContentMaxWidth(width);
+  const contentWrapperStyle: ViewStyle = contentMaxWidth != null
     ? {
-        maxWidth: maxContentWidth,
+        maxWidth: maxContentWidth ?? contentMaxWidth,
         width: '100%',
         alignSelf: 'center',
       }
@@ -56,31 +78,36 @@ export function Screen({
 
   const content = scroll ? (
     <ScrollView
-      style={styles.flex}
+      style={[styles.flex, styles.scrollBg]}
       keyboardShouldPersistTaps="handled"
-      contentContainerStyle={[containerPadding, styles.scrollGrow, contentWrapperStyle, contentContainerStyle]}
+      contentContainerStyle={[containerPadding, styles.scrollGrow, contentWrapperStyle, styles.contentBg, contentContainerStyle]}
     >
       {children}
     </ScrollView>
   ) : (
-    <View style={[styles.flex, containerPadding, contentWrapperStyle, contentContainerStyle]}>{children}</View>
+    <View style={[styles.flex, containerPadding, contentWrapperStyle, styles.contentBg, contentContainerStyle]}>{children}</View>
   );
 
   if (!keyboardAvoiding) {
-    return <View style={[styles.root, style]}>{content}</View>;
+    return <SafeAreaView edges={['left', 'right']} style={[styles.root, style]}>{content}</SafeAreaView>;
   }
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.root, style]}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
+        <SafeAreaView edges={['left', 'right']} style={[styles.root, style]}>
         {content}
+        </SafeAreaView>
       </KeyboardAvoidingView>
     </TouchableWithoutFeedback>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: appTheme.colors.background },
+  root: { flex: 1, backgroundColor: 'transparent' },
   flex: { flex: 1 },
   scrollGrow: { flexGrow: 1 },
+  /** White background only for ScrollView content, not for root (so header/bottom CTA are transparent) */
+  scrollBg: { backgroundColor: appTheme.colors.background },
+  contentBg: { backgroundColor: 'transparent' },
 });

@@ -12,7 +12,8 @@ import {
   ViewProps,
   ViewStyle,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { layout } from '../design/layout';
 import { spec } from '../design/spec';
 import { appTheme } from '../design/theme';
 
@@ -49,9 +50,10 @@ export function AppScreen({
   const paddingStyle: ViewStyle = padded
     ? {
         paddingHorizontal: spec.screenPaddingHorizontal,
+        paddingTop: topInset + layout.topContentOffset,
         paddingBottom: bottomInset + spec.screenPaddingBottomOffset,
       }
-    : { paddingBottom: bottomInset };
+    : { paddingTop: topInset + layout.topContentOffset, paddingBottom: bottomInset };
   const backgroundColor = background === 'surface' ? appTheme.colors.surface : appTheme.colors.background;
 
   const containerContent = scroll ? (
@@ -89,7 +91,7 @@ export function AppScreen({
     keyboardWrapped
   );
 
-  return <View style={[styles.root, { backgroundColor }, style]}>{wrappedContent}</View>;
+  return <SafeAreaView style={[styles.root, { backgroundColor }, style]}>{wrappedContent}</SafeAreaView>;
 }
 
 const styles = StyleSheet.create({

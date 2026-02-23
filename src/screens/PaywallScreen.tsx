@@ -2,10 +2,10 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { RootStackParamList } from '../app/navigation/types';
-import { AppScreen } from '../components/AppScreen';
 import { Card } from '../components/Card';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { SecondaryButton } from '../components/SecondaryButton';
+import { Screen } from '../ui/components/Screen';
 import { appTheme } from '../design/theme';
 import { trialRepo } from '../services/container';
 
@@ -22,7 +22,7 @@ export function PaywallScreen({ navigation, route }: Props): React.JSX.Element {
     navigation.goBack();
   };
   return (
-    <AppScreen scroll>
+    <Screen scroll>
       <View style={styles.wrap}>
         <View style={styles.headerRow}>
           <Pressable onPress={() => navigation.goBack()}><Text style={styles.headerAction}>Close</Text></Pressable>
@@ -44,13 +44,13 @@ export function PaywallScreen({ navigation, route }: Props): React.JSX.Element {
         <PrimaryButton title="Start Premium" loading={loading} onPress={() => void onStartPremium()} disabled={loading} />
         <SecondaryButton title="Not now" onPress={() => navigation.goBack()} />
       </View>
-    </AppScreen>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { gap: appTheme.spacing.md, paddingBottom: appTheme.spacing.xl },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', minHeight: 44, alignItems: 'center' },
   headerAction: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.small.fontSize, fontWeight: '600' },
   title: { fontSize: appTheme.typography.title.fontSize, color: appTheme.colors.textPrimary, fontWeight: '800', textAlign: 'center' },
   subtitle: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.body.fontSize, textAlign: 'center' },

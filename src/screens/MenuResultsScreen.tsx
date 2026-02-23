@@ -28,7 +28,7 @@ import { typography } from '../ui/typography';
 
 const BOTTOM_BAR_PADDING = spec.screenPaddingBottomOffset;
 const BOTTOM_BAR_APPROX_HEIGHT = spec.primaryButtonHeight + spec.spacing[12] + spec.minTouchTarget + BOTTOM_BAR_PADDING * 2;
-const SCROLL_PADDING_BOTTOM = BOTTOM_BAR_APPROX_HEIGHT + spec.spacing[24];
+const SCROLL_PADDING_BOTTOM = BOTTOM_BAR_APPROX_HEIGHT + spec.spacing[12];
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MenuResults'>;
 
@@ -210,11 +210,11 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
     Alert.alert('Added', `${dish.name} logged to your day.`);
   }, []);
 
-  const scrollPaddingBottom = insets.bottom + SCROLL_PADDING_BOTTOM;
+  const scrollPaddingBottom = insets.bottom + (result ? SCROLL_PADDING_BOTTOM : spec.spacing[24]);
   const bottomBarPaddingBottom = insets.bottom + BOTTOM_BAR_PADDING;
 
   return (
-    <Screen scroll={false} padded={false}>
+    <Screen scroll={false} padded={false} safeTop={false} safeBottom={false}>
       <View style={styles.root}>
         {/* Custom header: back, Analysis Complete, more */}
         <View style={[styles.header, { paddingTop: insets.top + spec.headerPaddingTopOffset }]}>
@@ -287,30 +287,32 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
           )}
         </ScrollView>
 
-        {/* Fixed bottom bar */}
-        <View
-          style={[
-            styles.bottomBar,
-            styles.bottomBarBg,
-            {
-              paddingBottom: bottomBarPaddingBottom,
-              paddingTop: BOTTOM_BAR_PADDING,
-            },
-          ]}
-        >
-          <View style={styles.bottomBarContent}>
-            <Pressable
-              style={({ pressed }) => [styles.rescanBtn, pressed && styles.rescanPressed]}
-              onPress={() => navigation.navigate('ScanMenu')}
-            >
-              <Text style={styles.rescanIcon}>⊙</Text>
-              <Text style={styles.rescanBtnText} maxFontSizeMultiplier={1.2}>Rescan Menu</Text>
-            </Pressable>
-            <Pressable onPress={() => navigation.navigate('Chat', { resultId: result?.id })} style={styles.chatLinkWrap}>
-              <Text style={styles.chatLink} maxFontSizeMultiplier={1.2}>Open chat with Buddy</Text>
-            </Pressable>
+        {/* Audit fix: render sticky actions only when result exists (prevents undefined resultId navigation) */}
+        {result ? (
+          <View
+            style={[
+              styles.bottomBar,
+              styles.bottomBarBg,
+              {
+                paddingBottom: bottomBarPaddingBottom,
+                paddingTop: BOTTOM_BAR_PADDING,
+              },
+            ]}
+          >
+            <View style={styles.bottomBarContent}>
+              <Pressable
+                style={({ pressed }) => [styles.rescanBtn, pressed && styles.rescanPressed]}
+                onPress={() => navigation.navigate('ScanMenu')}
+              >
+                <Text style={styles.rescanIcon}>⊙</Text>
+                <Text style={styles.rescanBtnText} maxFontSizeMultiplier={1.2}>Rescan Menu</Text>
+              </Pressable>
+              <Pressable onPress={() => navigation.navigate('Chat', { resultId: result.id })} style={styles.chatLinkWrap}>
+                <Text style={styles.chatLink} maxFontSizeMultiplier={1.2}>Open chat with Buddy</Text>
+              </Pressable>
+            </View>
           </View>
-        </View>
+        ) : null}
       </View>
 
       <Modal transparent visible={Boolean(whyText)} animationType="slide" onRequestClose={() => setWhyText(null)}>

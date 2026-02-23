@@ -4,10 +4,12 @@ export const appTheme = {
   colors: {
     ...colors,
     background: colors.bg,
+    surface: colors.surface,
     textPrimary: colors.ink,
     textSecondary: colors.muted,
+    placeholder: colors.placeholder,
     primary: colors.primary,
-    primaryButton: colors.primary,
+    primaryButton: colors.primaryButton,
     secondaryButton: colors.border,
     accent: colors.accent,
     accentSoft: colors.accentSoft,

@@ -1,12 +1,17 @@
 /** Single source of truth for UI tokens. Use via design/theme and design/spec. */
 
 export const colors = {
-  bg: '#F5F6F8',
+  /** Match Figma Onboarding 2 (Goal Selection): no separate white bar for header/button */
+  bg: '#FFFFFF',
   surface: '#FFFFFF',
   ink: '#0B0F1A',
   muted: '#6B7280',
+  /** Placeholder text (e.g. inputs); visible grey per Apple HIG */
+  placeholder: '#8E8E93',
   border: '#E6EAF0',
   primary: '#0B0F1A',
+  /** Bottom CTA button fill (Figma: black 0,0,0) */
+  primaryButton: '#000000',
   primaryText: '#FFFFFF',
   disabledBg: '#D1D5DB',
   disabledText: '#FFFFFF',

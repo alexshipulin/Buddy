@@ -22,10 +22,10 @@ export function AppNavigator(): React.JSX.Element {
       initialRouteName="Welcome"
       screenOptions={{
         headerShown: false,
-        headerStyle: { backgroundColor: appTheme.colors.background },
+        headerStyle: { backgroundColor: 'transparent' },
         headerShadowVisible: false,
         headerTintColor: appTheme.colors.textPrimary,
-        contentStyle: { backgroundColor: appTheme.colors.background },
+        contentStyle: { backgroundColor: 'transparent' },
       }}
     >
       <Stack.Screen name="Welcome" component={WelcomeScreen} />

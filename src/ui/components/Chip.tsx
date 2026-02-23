@@ -49,16 +49,21 @@ const styles = StyleSheet.create({
   },
   text: {
     fontSize: appTheme.typography.body.fontSize,
-    fontWeight: appTheme.typography.body.fontWeight,
+    fontWeight: '500',
     color: appTheme.colors.muted,
+    textAlign: 'center',
+    width: '100%',
   },
   textSmall: {
     fontSize: appTheme.typography.caption.fontSize,
-    fontWeight: appTheme.typography.caption.fontWeight,
+    fontWeight: '500',
     color: appTheme.colors.muted,
+    textAlign: 'center',
+    width: '100%',
   },
   selectedText: {
     color: appTheme.colors.primaryText,
-    fontWeight: '600',
+    fontWeight: '500',
+    textAlign: 'center',
   },
 });

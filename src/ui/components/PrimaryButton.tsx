@@ -38,7 +38,7 @@ const styles = StyleSheet.create({
   button: {
     minHeight: spec.primaryButtonHeight,
     borderRadius: spec.primaryButtonRadius,
-    backgroundColor: appTheme.colors.primary,
+    backgroundColor: appTheme.colors.primaryButton,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spec.primaryButtonPaddingHorizontal,

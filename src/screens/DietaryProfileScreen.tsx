@@ -1,14 +1,15 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../app/navigation/types';
 import { Allergy, DietaryPreference } from '../domain/models';
 import { userRepo } from '../services/container';
-import { ScreenHeader } from '../components/ScreenHeader';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Chip } from '../ui/components/Chip';
+import { BottomCTA, getCTATotalHeight } from '../ui/components/BottomCTA';
 import { PrimaryButton } from '../ui/components/PrimaryButton';
 import { Screen } from '../ui/components/Screen';
+import { layout } from '../design/layout';
 import { appTheme } from '../design/theme';
 import { spec } from '../design/spec';
 import { typography } from '../ui/typography';
@@ -19,6 +20,8 @@ const allergies: Allergy[] = ['Milk', 'Eggs', 'Fish', 'Crustacean shellfish (shr
 const DISLIKES_PRESET = ['Avocado', 'Mushrooms', 'Olives', 'Cilantro', 'Onions'];
 
 export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
+  const insets = useSafeAreaInsets();
+  const scrollPaddingBottom = getCTATotalHeight(insets.bottom) + spec.spacing[12];
   const [selectedPreferences, setSelectedPreferences] = React.useState<DietaryPreference[]>([]);
   const [selectedAllergies, setSelectedAllergies] = React.useState<Allergy[]>([]);
   const [selectedDislikes, setSelectedDislikes] = React.useState<string[]>([]);
@@ -49,43 +52,50 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
 
   const allDislikes = [...DISLIKES_PRESET, ...customDislikes];
 
-  const insets = useSafeAreaInsets();
-
   return (
-    <Screen>
-      <ScreenHeader leftLabel="Goal" title="Dietary profile" onBack={() => navigation.goBack()} />
-      <View style={styles.wrap}>
-        <View style={[styles.stepIndicator, { marginTop: spec.stepMarginTop, marginBottom: spec.stepMarginBottom }]}>
+    <Screen hasBottomCTA>
+      <View style={styles.headerRow}>
+        <View style={styles.headerSpacer} />
+        <View style={styles.stepIndicator}>
           <View style={styles.dot} /><View style={styles.dot} /><View style={styles.dotActive} /><View style={styles.dot} />
         </View>
-        <Text style={styles.title} maxFontSizeMultiplier={1.2}>Dietary profile</Text>
-        <Text style={styles.subtitle} maxFontSizeMultiplier={1.2}>Optional. You can change this later.</Text>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
-          <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.2}>Diet preferences</Text>
-          <View style={styles.chipsWrap}>
-            <Chip label="None" selected={selectedPreferences.length === 0} onPress={() => setSelectedPreferences([])} />
-            {preferences.map((pref) => <Chip key={pref} label={pref} selected={selectedPreferences.includes(pref)} onPress={() => togglePref(pref)} />)}
-          </View>
-          <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.2}>Common allergies</Text>
-          <View style={styles.chipsWrap}>
-            <Chip label="None" selected={selectedAllergies.length === 0} onPress={() => setSelectedAllergies([])} />
-            {allergies.slice(0, 8).map((allergy) => <Chip key={allergy} label={allergy} selected={selectedAllergies.includes(allergy)} onPress={() => toggleAllergy(allergy)} />)}
-          </View>
-          <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.2}>Dislikes</Text>
-          <View style={styles.chipsWrap}>
-            {allDislikes.map((label) => (
-              <Chip key={label} label={label} selected={selectedDislikes.includes(label)} onPress={() => toggleDislike(label)} />
-            ))}
-            <Pressable style={styles.addOther} onPress={() => setAddOtherVisible(true)}>
-              <Text style={styles.addOtherText}>+ Add other</Text>
-            </Pressable>
-          </View>
-        </ScrollView>
-        <View style={[styles.actions, { paddingBottom: insets.bottom + spec.screenPaddingBottomOffset }]}>
-          <PrimaryButton title="Save" onPress={onSave} />
-          <Pressable onPress={goHome}><Text style={styles.skip} maxFontSizeMultiplier={1.2}>Skip</Text></Pressable>
+        <View style={[styles.headerSpacer, styles.headerSpacerRight]}>
+          <Pressable onPress={goHome} hitSlop={8} style={styles.skipWrap}>
+            <Text style={styles.skipText} maxFontSizeMultiplier={1.2}>Skip</Text>
+          </Pressable>
         </View>
       </View>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollPaddingBottom }]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.title} maxFontSizeMultiplier={1.2}>Dietary profile</Text>
+        <Text style={styles.subtitle} maxFontSizeMultiplier={1.2}>Optional. You can change this later.</Text>
+        <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.2}>Diet preferences</Text>
+        <View style={styles.chipsWrap}>
+          <Chip label="None" selected={selectedPreferences.length === 0} onPress={() => setSelectedPreferences([])} />
+          {preferences.map((pref) => <Chip key={pref} label={pref} selected={selectedPreferences.includes(pref)} onPress={() => togglePref(pref)} />)}
+        </View>
+        <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.2}>Common allergies</Text>
+        <View style={styles.chipsWrap}>
+          <Chip label="None" selected={selectedAllergies.length === 0} onPress={() => setSelectedAllergies([])} />
+          {allergies.slice(0, 8).map((allergy) => <Chip key={allergy} label={allergy} selected={selectedAllergies.includes(allergy)} onPress={() => toggleAllergy(allergy)} />)}
+        </View>
+        <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.2}>Dislikes</Text>
+        <View style={styles.chipsWrap}>
+          {allDislikes.map((label) => (
+            <Chip key={label} label={label} selected={selectedDislikes.includes(label)} onPress={() => toggleDislike(label)} />
+          ))}
+          <Pressable style={styles.addOther} onPress={() => setAddOtherVisible(true)}>
+            <Text style={styles.addOtherText}>+ Add other</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+      <BottomCTA>
+        <PrimaryButton title="Save" onPress={onSave} />
+      </BottomCTA>
 
       <Modal visible={addOtherVisible} transparent animationType="fade">
         <Pressable style={styles.modalBackdrop} onPress={() => setAddOtherVisible(false)}>
@@ -94,6 +104,7 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
             <TextInput
               style={styles.addOtherInput}
               placeholder="e.g. Broccoli"
+              placeholderTextColor={appTheme.colors.placeholder}
               value={addOtherInput}
               onChangeText={setAddOtherInput}
               autoCapitalize="none"
@@ -113,13 +124,25 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
 }
 
 const styles = StyleSheet.create({
-  wrap: { flex: 1, gap: 0 },
-  stepIndicator: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: spec.stepGap },
+  /** No white bar: transparent so no separate background (Figma) */
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: layout.topContentOffset + spec.stepMarginTop,
+    paddingBottom: spec.stepMarginBottom,
+    backgroundColor: 'transparent',
+  },
+  headerSpacer: { flex: 1 },
+  headerSpacerRight: { alignItems: 'flex-end' },
+  stepIndicator: { flexDirection: 'row', alignItems: 'center', gap: spec.stepGap },
   dot: { width: spec.stepDotSize, height: spec.stepDotSize, borderRadius: spec.stepDotSize / 2, backgroundColor: appTheme.colors.border },
   dotActive: { width: spec.stepActiveWidth, height: spec.stepActiveHeight, borderRadius: spec.stepActiveHeight / 2, backgroundColor: appTheme.colors.ink },
+  skipWrap: { minWidth: spec.minTouchTarget, minHeight: spec.minTouchTarget, alignItems: 'center', justifyContent: 'center' },
+  skipText: { fontSize: spec.headerPillFontSize, fontWeight: '600', color: appTheme.colors.muted },
+  scroll: { flex: 1 },
+  scrollContent: { gap: spec.spacing[12] },
   title: { ...typography.h1, marginTop: 0 },
   subtitle: { ...typography.body, color: appTheme.colors.muted, marginTop: spec.spacing[8] },
-  content: { gap: spec.spacing[12], paddingBottom: spec.spacing[24] },
   sectionTitle: { ...typography.h2, marginTop: spec.spacing[24] },
   chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spec.spacing[12] },
   addOther: {
@@ -133,8 +156,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   addOtherText: { color: appTheme.colors.muted, fontSize: appTheme.typography.body.fontSize, fontWeight: '500' },
-  actions: { marginTop: 'auto', gap: spec.spacing[12] },
-  skip: { textAlign: 'center', color: appTheme.colors.muted, ...appTheme.typography.bodySemibold },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: spec.spacing[20] },
   addOtherModal: { backgroundColor: appTheme.colors.surface, borderRadius: spec.cardRadius, padding: spec.cardPadding, gap: spec.spacing[16] },
   addOtherModalTitle: { ...typography.h2 },

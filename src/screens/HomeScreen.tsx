@@ -46,7 +46,7 @@ export function HomeScreen({ navigation }: Props): React.JSX.Element {
   const hasTargets = Boolean(user?.baseParams);
 
   return (
-    <Screen scroll maxContentWidth={460}>
+    <Screen scroll>
       <View style={styles.scroll}>
         <View style={styles.header}>
           <View>
@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   avatar: { width: 44, height: 44, borderRadius: 22, overflow: 'hidden', minWidth: spec.minTouchTarget, minHeight: spec.minTouchTarget },
   avatarImage: { width: '100%', height: '100%' },
-  greeting: { ...typography.hero },
+  greeting: { ...typography.largeTitle },
   subtitleHeader: { ...typography.body, color: appTheme.colors.muted, marginTop: spec.spacing[4] },
   todayCard: { gap: spec.spacing[16] },
   todayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
