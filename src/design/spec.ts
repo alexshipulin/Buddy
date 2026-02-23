@@ -2,13 +2,14 @@
  * Authoritative UI spec used by components and screens.
  * All spacing, typography, colors, and component dimensions derive from here.
  */
-import { colors, spacing, radius, cardShadow, typographyTokens } from './tokens';
+import { colors, spacing, radius, shadowTokens, typographyTokens } from './tokens';
 
 export const spec = {
   colors,
   spacing,
   radius,
-  cardShadow,
+  /** Card-level shadow (iOS-style). Prefer appTheme.shadows.card. */
+  cardShadow: shadowTokens.card,
 
   /** Semantic typography (use with Text style). Default allowFontScaling, maxFontSizeMultiplier 1.2 */
   typography: typographyTokens,
@@ -40,6 +41,8 @@ export const spec = {
   cardRadius: radius.card,
   cardPadding: spacing[20],
   cardBorderWidth: 1,
+  /** Horizontal margin so card shadow is not clipped (≥ shadowTokens.card.shadowRadius). */
+  cardShadowMargin: spacing[16],
 
   /** Inputs */
   inputHeight: 52,

@@ -1,4 +1,4 @@
-import { colors, radius, spacing, spacingScale, cardShadow, typographyTokens } from './tokens';
+import { colors, radius, spacing, spacingScale, shadowTokens, typographyTokens } from './tokens';
 
 export const appTheme = {
   colors: {
@@ -40,8 +40,30 @@ export const appTheme = {
     xl: radius.card,
     pill: radius.pill,
   },
-  shadows: { card: { ...cardShadow, elevation: 4 } },
+  shadows: {
+    none: shadowTokens.none,
+    hairline: shadowTokens.hairline,
+    card: shadowTokens.card,
+    raised: shadowTokens.raised,
+    modal: shadowTokens.modal,
+  },
   typography: typographyTokens,
 };
 
 export type AppTheme = typeof appTheme;
+
+export type ShadowLevel = keyof typeof appTheme.shadows;
+
+/** Returns shadow style for the given level. In dark mode opacity is reduced (~30%) for softer shadows. */
+export function getShadow(
+  level: ShadowLevel,
+  colorScheme: 'light' | 'dark' = 'light'
+): typeof shadowTokens.card {
+  const token = shadowTokens[level];
+  if (level === 'none' || colorScheme === 'light') return token;
+  return {
+    ...token,
+    shadowOpacity: token.shadowOpacity * 0.65,
+    elevation: Math.max(0, Math.round(token.elevation * 0.7)),
+  };
+}

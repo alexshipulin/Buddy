@@ -47,13 +47,14 @@ export function AppScreen({
   const insets = useSafeAreaInsets();
   const topInset = respectInsets ? insets.top : 0;
   const bottomInset = respectInsets ? insets.bottom : 0;
+  /** When padded=false, only safe area insets (no topContentOffset or screen padding). */
   const paddingStyle: ViewStyle = padded
     ? {
         paddingHorizontal: spec.screenPaddingHorizontal,
         paddingTop: topInset + layout.topContentOffset,
         paddingBottom: bottomInset + spec.screenPaddingBottomOffset,
       }
-    : { paddingTop: topInset + layout.topContentOffset, paddingBottom: bottomInset };
+    : { paddingTop: topInset, paddingBottom: bottomInset };
   const backgroundColor = background === 'surface' ? appTheme.colors.surface : appTheme.colors.background;
 
   const containerContent = scroll ? (

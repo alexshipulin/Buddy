@@ -67,12 +67,50 @@ export const radiusScale = {
   xl: 24,
 } as const;
 
-export const cardShadow = {
-  shadowColor: '#000000',
-  shadowOpacity: 0.08,
-  shadowRadius: 14,
-  shadowOffset: { width: 0, height: 6 },
+/**
+ * Unified shadow levels (Apple iOS style). Use via appTheme.shadows.
+ * iOS: shadowColor/shadowOpacity/shadowRadius/shadowOffset; Android: elevation; Web: box-shadow.
+ */
+export const shadowTokens = {
+  none: {
+    shadowColor: 'transparent',
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 0,
+  },
+  hairline: {
+    shadowColor: '#000000',
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  card: {
+    shadowColor: '#000000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  raised: {
+    shadowColor: '#000000',
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
+  },
+  modal: {
+    shadowColor: '#000000',
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 14 },
+    elevation: 10,
+  },
 } as const;
+
+/** @deprecated Use shadowTokens.card or appTheme.shadows.card */
+export const cardShadow = shadowTokens.card;
 
 /**
  * iOS text styles mapping (HIG). Exact line heights per Figma/Apple HIG.

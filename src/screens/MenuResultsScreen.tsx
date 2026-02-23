@@ -27,7 +27,7 @@ import { spec } from '../design/spec';
 import { typography } from '../ui/typography';
 
 const BOTTOM_BAR_PADDING = spec.screenPaddingBottomOffset;
-const BOTTOM_BAR_APPROX_HEIGHT = spec.primaryButtonHeight + spec.spacing[12] + spec.minTouchTarget + BOTTOM_BAR_PADDING * 2;
+const BOTTOM_BAR_APPROX_HEIGHT = spec.minTouchTarget + BOTTOM_BAR_PADDING * 2;
 const SCROLL_PADDING_BOTTOM = BOTTOM_BAR_APPROX_HEIGHT + spec.spacing[12];
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MenuResults'>;
@@ -101,7 +101,9 @@ function TopPickCard({
       </View>
       <View style={styles.cardActions}>
         <PrimaryButton title="I take it" style={styles.takeBtn} onPress={() => onTakeDish(item)} />
-        <SecondaryButton title="Ask Buddy" style={styles.askBtn} onPress={() => onAskBuddy(item)} />
+        <Pressable onPress={() => onAskBuddy(item)} style={styles.askBuddyCardLink} hitSlop={8}>
+          <Text style={styles.askBuddyCardLinkText} maxFontSizeMultiplier={1.2}>Ask Buddy</Text>
+        </Pressable>
       </View>
     </Card>
   );
@@ -216,20 +218,18 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
   return (
     <Screen scroll={false} padded={false} safeTop={false} safeBottom={false}>
       <View style={styles.root}>
-        {/* Custom header: back, Analysis Complete, more */}
+        {/* Custom header: iOS-style back (chevron only), no title, no menu */}
         <View style={[styles.header, { paddingTop: insets.top + spec.headerPaddingTopOffset }]}>
           <View style={styles.headerRow}>
             <Pressable
-              style={styles.headerBtn}
+              style={styles.headerBackWrap}
               onPress={() => navigation.goBack()}
               hitSlop={8}
             >
-              <Text style={styles.headerBtnText}>‹</Text>
+              <Text style={styles.headerBackChevron}>‹</Text>
             </Pressable>
-            <Text style={styles.headerCenter} maxFontSizeMultiplier={1.2}>Analysis Complete</Text>
-            <Pressable style={styles.headerBtn} hitSlop={8}>
-              <Text style={styles.headerBtnText}>⋯</Text>
-            </Pressable>
+            <View style={styles.headerSpacer} />
+            <View style={styles.headerSpacer} />
           </View>
           <View style={styles.titleBlock}>
             <Text style={styles.pageTitle} maxFontSizeMultiplier={1.2}>Menu picks</Text>
@@ -292,25 +292,15 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
           <View
             style={[
               styles.bottomBar,
-              styles.bottomBarBg,
               {
                 paddingBottom: bottomBarPaddingBottom,
                 paddingTop: BOTTOM_BAR_PADDING,
               },
             ]}
           >
-            <View style={styles.bottomBarContent}>
-              <Pressable
-                style={({ pressed }) => [styles.rescanBtn, pressed && styles.rescanPressed]}
-                onPress={() => navigation.navigate('ScanMenu')}
-              >
-                <Text style={styles.rescanIcon}>⊙</Text>
-                <Text style={styles.rescanBtnText} maxFontSizeMultiplier={1.2}>Rescan Menu</Text>
-              </Pressable>
-              <Pressable onPress={() => navigation.navigate('Chat', { resultId: result.id })} style={styles.chatLinkWrap}>
-                <Text style={styles.chatLink} maxFontSizeMultiplier={1.2}>Open chat with Buddy</Text>
-              </Pressable>
-            </View>
+            <Pressable onPress={() => navigation.navigate('Chat', { resultId: result.id })} style={styles.askBuddyLinkWrap}>
+              <Text style={styles.askBuddyLink} maxFontSizeMultiplier={1.2}>Ask Buddy</Text>
+            </Pressable>
           </View>
         ) : null}
       </View>
@@ -341,22 +331,14 @@ const styles = StyleSheet.create({
     minHeight: 40,
     marginBottom: spec.spacing[4],
   },
-  headerBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: appTheme.colors.surface,
-    borderWidth: 1,
-    borderColor: appTheme.colors.border,
+  headerBackWrap: {
+    minWidth: spec.minTouchTarget,
+    minHeight: spec.minTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerBtnText: { fontSize: 22, color: appTheme.colors.textPrimary, fontWeight: '300' },
-  headerCenter: {
-    fontSize: spec.headerPillFontSize,
-    fontWeight: '600',
-    color: appTheme.colors.textSecondary,
-  },
+  headerBackChevron: { fontSize: 32, color: appTheme.colors.textPrimary, fontWeight: '300' },
+  headerSpacer: { width: spec.minTouchTarget, height: spec.minTouchTarget },
   titleBlock: { gap: 2 },
   pageTitle: { ...typography.h1, color: appTheme.colors.textPrimary },
   pageSubtitle: { ...typography.body, color: appTheme.colors.textSecondary },
@@ -408,15 +390,17 @@ const styles = StyleSheet.create({
   sparkleIcon: { fontSize: appTheme.typography.footnote.fontSize, color: appTheme.colors.textSecondary },
   statusText: { ...typography.caption, color: appTheme.colors.textSecondary },
   statusMuted: { ...typography.caption, color: appTheme.colors.textSecondary, opacity: 0.9 },
-  cardActions: { flexDirection: 'row', gap: spec.spacing[12], marginTop: spec.spacing[4] },
+  cardActions: { flexDirection: 'row', gap: spec.spacing[12], marginTop: spec.spacing[4], alignItems: 'center' },
   takeBtn: { flex: 1 },
-  askBtn: { minWidth: 0 },
+  askBuddyCardLink: { justifyContent: 'center', minHeight: spec.minTouchTarget, paddingVertical: spec.spacing[4] },
+  askBuddyCardLinkText: { ...typography.bodySemibold, color: appTheme.colors.accent },
   compactCard: {
     backgroundColor: appTheme.colors.surface,
     borderRadius: spec.cardRadius,
     padding: spec.cardPadding,
     borderWidth: spec.cardBorderWidth,
     borderColor: appTheme.colors.border,
+    ...appTheme.shadows.card,
   },
   compactHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spec.spacing[4] },
   compactTitle: { ...typography.bodySemibold, color: appTheme.colors.textPrimary, flex: 1 },
@@ -435,32 +419,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    overflow: 'hidden',
-    borderTopWidth: 1,
-    borderTopColor: appTheme.colors.border,
+    paddingHorizontal: spec.screenPaddingHorizontal,
   },
-  bottomBarBg: { backgroundColor: 'rgba(255,255,255,0.95)' },
-  bottomBarContent: { paddingHorizontal: spec.screenPaddingHorizontal, gap: spec.spacing[12] },
-  rescanBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spec.spacing[8],
-    minHeight: spec.primaryButtonHeight,
-    borderRadius: spec.primaryButtonRadius,
-    backgroundColor: appTheme.colors.surface,
-    borderWidth: 1,
-    borderColor: appTheme.colors.border,
-  },
-  rescanPressed: { opacity: 0.9 },
-  rescanIcon: { fontSize: 20, color: appTheme.colors.textPrimary },
-  rescanBtnText: {
-    fontSize: appTheme.typography.bodySemibold.fontSize,
-    fontWeight: '600',
-    color: appTheme.colors.textPrimary,
-  },
-  chatLinkWrap: { alignItems: 'center', paddingVertical: spec.spacing[4] },
-  chatLink: { ...typography.bodySemibold, color: appTheme.colors.accent },
+  askBuddyLinkWrap: { alignItems: 'center', paddingVertical: spec.spacing[8], minHeight: spec.minTouchTarget, justifyContent: 'center' },
+  askBuddyLink: { ...typography.bodySemibold, color: appTheme.colors.accent },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#11182755' },
   sheet: {
     backgroundColor: appTheme.colors.surface,
@@ -468,6 +430,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: spec.sheetRadius,
     padding: spec.cardPadding,
     gap: spec.spacing[16],
+    ...appTheme.shadows.modal,
   },
   sheetTitle: { ...typography.bodySemibold },
   sheetText: { ...typography.body, color: appTheme.colors.textSecondary },

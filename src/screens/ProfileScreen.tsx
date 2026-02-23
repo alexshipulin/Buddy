@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { RootStackParamList } from '../app/navigation/types';
 import { ActivityLevel, Sex, UserProfile } from '../domain/models';
 import { USE_MOCK_DATA } from '../config/local';
@@ -16,16 +16,48 @@ import { Screen } from '../ui/components/Screen';
 import { SelectField } from '../ui/components/SelectField';
 import { SegmentedControl } from '../ui/components/SegmentedControl';
 import { TextField } from '../ui/components/TextField';
+import { getPagePaddingX, layout } from '../design/layout';
+import { shadowTokens } from '../design/tokens';
 import { appTheme } from '../design/theme';
 import { spec } from '../design/spec';
 import { typography } from '../ui/typography';
+
+/** Horizontal space for card shadow so it is not clipped (≥ shadowRadius). */
+const CARD_SHADOW_MARGIN = shadowTokens.card.shadowRadius;
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Profile'>;
 
 export function ProfileScreen({ navigation }: Props): React.JSX.Element {
   const [user, setUser] = React.useState<UserProfile | null>(null);
   const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
   const scrollPaddingBottom = getCTATotalHeight(insets.bottom) + spec.spacing[12];
+  const pagePaddingX = getPagePaddingX(screenWidth);
+  const scrollContentWidth = screenWidth - pagePaddingX * 2;
+
+  // #region agent log
+  const logScrollLayout = (evt: { nativeEvent: { layout: { width: number } } }) => {
+    const w = evt.nativeEvent.layout.width;
+    fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '01b4c8' },
+      body: JSON.stringify({
+        sessionId: '01b4c8',
+        location: 'ProfileScreen.tsx:ScrollView.onLayout',
+        message: 'Profile scroll layout',
+        data: {
+          scrollViewWidth: w,
+          scrollContentWidth,
+          pagePaddingX,
+          cardShadowRadius: shadowTokens.card.shadowRadius,
+          shadowNeedsMargin: shadowTokens.card.shadowRadius,
+          hypothesisId: 'H1',
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  };
+  // #endregion
   const [trialText, setTrialText] = React.useState('Free');
   const [height, setHeight] = React.useState('');
   const [weight, setWeight] = React.useState('');
@@ -87,11 +119,13 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
     <Screen keyboardAvoiding safeTop={false}>
       <ScreenHeader />
       <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[styles.wrap, { paddingBottom: scrollPaddingBottom }]}
+        style={[styles.scroll, styles.scrollOverflow]}
+        contentContainerStyle={[styles.wrap, { paddingBottom: scrollPaddingBottom, paddingHorizontal: CARD_SHADOW_MARGIN }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        onLayout={logScrollLayout}
       >
+        <View style={styles.shadowBleedWrap}>
         <Card>
           <Text style={styles.sectionLabel}>ACCOUNT</Text>
           <View style={styles.rowBetween}>
@@ -153,6 +187,7 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
           <View style={styles.rowBetween}><Text style={styles.fieldTitle} maxFontSizeMultiplier={1.2}>Privacy Policy</Text><Text style={styles.chevron}>{'>'}</Text></View>
         </Card>
         <Text style={styles.disclaimer} maxFontSizeMultiplier={1.2}>Disclaimer: This app is for informational purposes only and does not constitute medical advice.</Text>
+        </View>
       </ScrollView>
       <BottomCTA>
         <PrimaryButton title="Save Changes" onPress={() => void save()} />
@@ -163,7 +198,11 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
 
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
-  wrap: { gap: spec.spacing[16] },
+  /** Allow card shadows to draw outside scroll bounds (iOS). */
+  scrollOverflow: { overflow: 'visible' as const },
+  wrap: { flexGrow: 1 },
+  /** Negative margin so cards keep same width; shadow has room from wrap paddingHorizontal. iOS grouped-list gap between cards. */
+  shadowBleedWrap: { marginHorizontal: -CARD_SHADOW_MARGIN, gap: layout.sectionSpacingY },
   sectionLabel: { ...typography.overline, color: appTheme.colors.muted, marginBottom: spec.spacing[8] },
   rowBetween: {
     flexDirection: 'row',

@@ -42,7 +42,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spec.primaryButtonPaddingHorizontal,
-    ...appTheme.shadows.card,
+    ...appTheme.shadows.raised,
   },
   text: {
     fontSize: appTheme.typography.bodySemibold.fontSize,
@@ -53,7 +53,6 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.92 },
   disabled: {
     backgroundColor: appTheme.colors.disabledBg,
-    shadowOpacity: 0,
-    elevation: 0,
+    ...appTheme.shadows.none,
   },
 });

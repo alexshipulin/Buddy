@@ -27,7 +27,7 @@ const styles = StyleSheet.create({
     minHeight: spec.primaryButtonHeight,
     alignItems: 'center',
     justifyContent: 'center',
-    ...appTheme.shadows.card,
+    ...appTheme.shadows.raised,
   },
   text: {
     color: appTheme.colors.primaryText,
@@ -35,5 +35,5 @@ const styles = StyleSheet.create({
     fontSize: appTheme.typography.bodySemibold.fontSize,
   },
   pressed: { opacity: 0.92 },
-  disabled: { backgroundColor: appTheme.colors.disabledBg, opacity: 1, shadowOpacity: 0, elevation: 0 },
+  disabled: { backgroundColor: appTheme.colors.disabledBg, opacity: 1, ...appTheme.shadows.none },
 });

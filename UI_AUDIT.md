@@ -92,6 +92,17 @@
     - `pagePaddingX`
     - `titleTextStyleName`
 
+### 7) Unified shadow tokens (iOS-style)
+- **Source:** `src/design/tokens.ts` → `shadowTokens`; `appTheme.shadows` in `src/design/theme.ts`.
+- **Levels:** `none`, `hairline`, `card`, `raised`, `modal`.
+- **Usage:**
+  - **shadowNone** — disabled state of primary button (no shadow).
+  - **shadowHairline** — reserved for fine separators / subtle elevation (e.g. list rows).
+  - **shadowCard** — `Card` (ui + components), `MenuResultsScreen` compactCard (Caution/Avoid).
+  - **shadowRaised** — `PrimaryButton` (both ui and components) when enabled.
+  - **shadowModal** — bottom sheets and modals: `WelcomeScreen` bottomSheet, `MenuResultsScreen` sheet, `DietaryProfileScreen` addOtherModal.
+- iOS: `shadowColor` / `shadowOpacity` / `shadowRadius` / `shadowOffset`; Android: `elevation`. No hardcoded shadow values in components.
+
 ## Phase 1 Checklist (status)
 
 - [x] Audit for width-based font scaling helpers

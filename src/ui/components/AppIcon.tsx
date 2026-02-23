@@ -5,13 +5,13 @@ import { uiTheme } from '../theme';
 
 type IconName = 'scan' | 'meal' | 'profile' | 'diet' | 'sparkles' | 'camera';
 
-/** Material Icons (filled). Goal cards: 24 in 44px circle; Home tiles: 24×24. */
+/** Material Icons (filled). Scan = camera_alt, Track meal = edit; both 24×24 on Home. */
 const MATERIAL_ICON_NAMES: Partial<Record<IconName, string>> = {
   diet: 'local-fire-department',       // Lose fat
   sparkles: 'local-florist',          // Maintain weight
-  meal: 'fitness-center',             // Gain muscle / Track meal
+  meal: 'edit',                       // Track meal (Material filled edit)
   profile: 'restaurant',               // Eat healthier
-  scan: 'document-scanner',            // Scan menu
+  scan: 'camera-alt',                 // Scan menu (Material filled camera_alt)
 };
 
 type Props = {
@@ -48,15 +48,19 @@ export function AppIcon({ name, size = 20 }: Props): React.JSX.Element {
     return uiTheme.colors.accent;
   };
 
-  const containerSize = size !== undefined && size !== 20 ? size : 44;
-  const iconSize = size !== undefined && size !== 20 ? size : 24;
+  /** Home tiles: icon strictly 24×24pt inside parent's 56×56 circle (Figma/Swift spec). Goal cards: 44 circle with colored bg. */
+  const HOME_TILE_ICON_SIZE = 24;
+  const isTileIcon = size === HOME_TILE_ICON_SIZE;
+  const containerSize = isTileIcon ? HOME_TILE_ICON_SIZE : 44;
+  const iconSizePx = isTileIcon ? HOME_TILE_ICON_SIZE : 24;
+  const wrapBg = isTileIcon ? 'transparent' : getBackgroundColor();
 
-  const materialCast = materialName as 'local-fire-department' | 'local-florist' | 'fitness-center' | 'restaurant' | 'document-scanner';
+  const materialCast = materialName as 'local-fire-department' | 'local-florist' | 'fitness-center' | 'restaurant' | 'camera-alt' | 'edit';
 
   if (materialName != null) {
     return (
-      <View style={[styles.wrap, { width: containerSize, height: containerSize, borderRadius: containerSize / 2, backgroundColor: getBackgroundColor() }]}>
-        <MaterialIcons name={materialCast} size={iconSize} color={getColor()} />
+      <View style={[styles.wrap, { width: containerSize, height: containerSize, borderRadius: containerSize / 2, backgroundColor: wrapBg }]}>
+        <MaterialIcons name={materialCast} size={iconSizePx} color={getColor()} />
       </View>
     );
   }

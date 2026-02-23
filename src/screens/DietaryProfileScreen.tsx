@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
   },
   addOtherText: { color: appTheme.colors.muted, fontSize: appTheme.typography.body.fontSize, fontWeight: '500' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: spec.spacing[20] },
-  addOtherModal: { backgroundColor: appTheme.colors.surface, borderRadius: spec.cardRadius, padding: spec.cardPadding, gap: spec.spacing[16] },
+  addOtherModal: { backgroundColor: appTheme.colors.surface, borderRadius: spec.cardRadius, padding: spec.cardPadding, gap: spec.spacing[16], ...appTheme.shadows.modal },
   addOtherModalTitle: { ...typography.h2 },
   addOtherInput: { borderWidth: 1, borderColor: appTheme.colors.border, borderRadius: spec.inputRadius, paddingHorizontal: spec.inputPaddingX, paddingVertical: spec.spacing[12], fontSize: appTheme.typography.body.fontSize, minHeight: spec.inputHeight },
   addOtherModalActions: { flexDirection: 'row', alignItems: 'center', gap: spec.spacing[16] },

@@ -81,6 +81,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: spec.sheetRadius,
     maxHeight: '60%',
     minHeight: 320,
+    ...appTheme.shadows.modal,
   },
   bottomSheetContent: {
     flex: 1,
