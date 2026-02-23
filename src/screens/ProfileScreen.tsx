@@ -1,17 +1,17 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../app/navigation/types';
 import { ActivityLevel, Sex, UserProfile } from '../domain/models';
 import { USE_MOCK_DATA } from '../config/local';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { mockProfile, mockProfileMeta } from '../mock/profile';
 import { trialRepo, userRepo } from '../services/container';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { AppIcon } from '../ui/components/AppIcon';
+import { BottomCTA, getCTATotalHeight } from '../ui/components/BottomCTA';
 import { Card } from '../ui/components/Card';
 import { PrimaryButton } from '../ui/components/PrimaryButton';
-import { BottomCTA } from '../ui/components/BottomCTA';
 import { Screen } from '../ui/components/Screen';
 import { SelectField } from '../ui/components/SelectField';
 import { SegmentedControl } from '../ui/components/SegmentedControl';
@@ -22,10 +22,10 @@ import { typography } from '../ui/typography';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Profile'>;
 
-const BOTTOM_CTA_HEIGHT = 56 + spec.screenPaddingBottomOffset * 2 + 16;
-
 export function ProfileScreen({ navigation }: Props): React.JSX.Element {
   const [user, setUser] = React.useState<UserProfile | null>(null);
+  const insets = useSafeAreaInsets();
+  const scrollPaddingBottom = getCTATotalHeight(insets.bottom) + spec.spacing[12];
   const [trialText, setTrialText] = React.useState('Free');
   const [height, setHeight] = React.useState('');
   const [weight, setWeight] = React.useState('');
@@ -84,11 +84,11 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
   };
 
   return (
-    <Screen keyboardAvoiding bottomCTAPadding={BOTTOM_CTA_HEIGHT}>
-      <ScreenHeader leftLabel="Home" title="Profile" onBack={() => navigation.goBack()} />
+    <Screen keyboardAvoiding safeTop={false}>
+      <ScreenHeader />
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.wrap}
+        contentContainerStyle={[styles.wrap, { paddingBottom: scrollPaddingBottom }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -163,7 +163,7 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
 
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
-  wrap: { gap: spec.spacing[16], paddingBottom: spec.spacing[24] },
+  wrap: { gap: spec.spacing[16] },
   sectionLabel: { ...typography.overline, color: appTheme.colors.muted, marginBottom: spec.spacing[8] },
   rowBetween: {
     flexDirection: 'row',

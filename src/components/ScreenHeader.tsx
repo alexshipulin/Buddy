@@ -1,12 +1,13 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { layout } from '../design/layout';
 import { appTheme } from '../design/theme';
 import { spec } from '../design/spec';
 
 type Props = {
   /** Center title (no page labels from React Navigation) */
-  title: string;
+  title?: string;
   /** Left: back button (if onBack) or pill label e.g. "Welcome", "Goal", "Home" */
   leftLabel?: string;
   onBack?: () => void;
@@ -18,11 +19,10 @@ type Props = {
 
 export function ScreenHeader({ title, leftLabel, onBack, rightLabel, onRightPress, rightAction }: Props): React.JSX.Element {
   const insets = useSafeAreaInsets();
-  const paddingTop = insets.top + spec.headerPaddingTopOffset;
-
   return (
-    <View style={[styles.row, { paddingTop, paddingHorizontal: spec.screenPaddingHorizontal }]}>
+    <View style={[styles.row, { paddingTop: insets.top + spec.headerPaddingTopOffset, paddingHorizontal: spec.screenPaddingHorizontal }]}>
       <View style={styles.side}>
+        {/* Audit note: leftLabel-only screens should not pass onBack; onBack intentionally renders a back affordance first. */}
         {onBack != null ? (
           <Pressable
             onPress={onBack}
@@ -39,9 +39,13 @@ export function ScreenHeader({ title, leftLabel, onBack, rightLabel, onRightPres
           <View style={styles.placeholder} />
         )}
       </View>
-      <Text numberOfLines={1} style={styles.title} maxFontSizeMultiplier={1.2}>
-        {title}
-      </Text>
+      {title ? (
+        <Text numberOfLines={1} style={styles.title} maxFontSizeMultiplier={1.2}>
+          {title}
+        </Text>
+      ) : (
+        <View style={styles.placeholder} />
+      )}
       <View style={styles.side}>
         {rightAction != null ? (
           rightAction
@@ -63,6 +67,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 0,
+    backgroundColor: 'transparent',
   },
   side: { minWidth: 80, alignItems: 'center', justifyContent: 'center' },
   placeholder: { width: spec.minTouchTarget, height: spec.minTouchTarget },
