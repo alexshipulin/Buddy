@@ -1,194 +1,260 @@
-export type MenuAnalysis = {
-  topPicks: { name: string; reason: string; tags: string[] }[];
-  caution: { name: string; reason: string; tags: string[] }[];
-  avoid: { name: string; reason: string; tags: string[] }[];
-  warnings: string[];
+import type { Allergy, DietaryPreference, Goal } from '../domain/models';
+import { type ValidationIssue, MenuAnalysisValidationError, validateMenuAnalysisResponse } from '../validation/menuAnalysisValidator';
+import type { DishPick } from '../domain/models';
+
+export type { DishPick };
+
+export type MenuAnalysisResponse = {
+  topPicks: DishPick[];
+  caution: DishPick[];
+  avoid: DishPick[];
 };
 
-const MENU_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
+// ── Model chain ───────────────────────────────────────────────────────────────
+// Set EXPO_PUBLIC_GEMINI_MODEL env var to try a custom/newer model first.
+// On structured-output rejection, we automatically fall back down the chain.
+export const PRIMARY_MODEL = process.env.EXPO_PUBLIC_GEMINI_MODEL ?? 'gemini-2.5-flash';
+const FALLBACK_MODEL_1 = 'gemini-2.5-flash';
+const FALLBACK_MODEL_2 = 'gemini-2.5-flash-lite';
+
+function buildModelChain(): string[] {
+  const chain = [PRIMARY_MODEL, FALLBACK_MODEL_1, FALLBACK_MODEL_2];
+  return chain.filter((m, i) => chain.indexOf(m) === i); // deduplicate, preserve order
+}
+
+// Substrings that indicate the model doesn't support structured output / JSON mode.
+// Detection is case-insensitive and based on Gemini error response bodies.
+const STRUCTURED_OUTPUT_MARKERS = [
+  'json mode is not enabled',
+  'responsemimetype',
+  'responseschema',
+  'not supported',
+  'structured output',
+];
+
+function isStructuredOutputUnsupported(errText: string): boolean {
+  const lower = errText.toLowerCase();
+  return STRUCTURED_OUTPUT_MARKERS.some((m) => lower.includes(m));
+}
+
+// ── Error types ───────────────────────────────────────────────────────────────
+
+/**
+ * Thrown when Gemini returns a response that cannot be parsed as valid JSON
+ * or fails contract validation. Carries the raw model text for debug surfacing.
+ */
+export class MenuAnalysisInvalidJsonError extends Error {
+  raw: string;
+  model: string;
+  status?: number;
+  issues?: ValidationIssue[];
+
+  constructor(params: {
+    raw: string;
+    model: string;
+    status?: number;
+    message?: string;
+    issues?: ValidationIssue[];
+  }) {
+    super(params.message ?? 'Model returned invalid JSON or failed validation');
+    this.name = 'MenuAnalysisInvalidJsonError';
+    this.raw = params.raw;
+    this.model = params.model;
+    this.status = params.status;
+    this.issues = params.issues;
+  }
+}
+
+// ── JSON Schema for Gemini responseSchema ─────────────────────────────────────
+
+// Gemini API does not support "additionalProperties" in responseSchema — omit it to avoid 400.
+const DISH_PICK_SCHEMA = {
+  type: 'object',
   properties: {
-    topPicks: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          name: { type: "string" },
-          reason: { type: "string" },
-          tags: { type: "array", items: { type: "string" } },
-        },
-        required: ["name", "reason", "tags"],
-      },
-    },
-    caution: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          name: { type: "string" },
-          reason: { type: "string" },
-          tags: { type: "array", items: { type: "string" } },
-        },
-        required: ["name", "reason", "tags"],
-      },
-    },
-    avoid: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          name: { type: "string" },
-          reason: { type: "string" },
-          tags: { type: "array", items: { type: "string" } },
-        },
-        required: ["name", "reason", "tags"],
-      },
-    },
-    warnings: { type: "array", items: { type: "string" } },
+    name: { type: 'string' },
+    shortReason: { type: 'string' },
+    pins: { type: 'array', items: { type: 'string' } },
+    confidencePercent: { type: 'number' },
+    dietBadges: { type: 'array', items: { type: 'string' } },
+    allergenNote: { type: 'string', nullable: true },
+    noLine: { type: 'string', nullable: true },
   },
-  required: ["topPicks", "caution", "avoid", "warnings"],
-} as const;
+  required: ['name', 'shortReason', 'pins', 'confidencePercent', 'dietBadges', 'allergenNote', 'noLine'],
+};
 
-export async function analyzeMenuWithGemini(params: {
-  imageBase64: string;
-  mimeType: string;
-  userGoal: "Lose fat" | "Maintain weight" | "Gain muscle";
-  dietPrefs: string[];
-  allergies: string[];
-}): Promise<MenuAnalysis> {
-  const key = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-  if (!key) throw new Error("Missing EXPO_PUBLIC_GEMINI_API_KEY");
+const MENU_RESPONSE_SCHEMA = {
+  type: 'object',
+  properties: {
+    topPicks: { type: 'array', items: DISH_PICK_SCHEMA },
+    caution: { type: 'array', items: DISH_PICK_SCHEMA },
+    avoid: { type: 'array', items: DISH_PICK_SCHEMA },
+  },
+  required: ['topPicks', 'caution', 'avoid'],
+};
 
-  const url =
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" +
-    encodeURIComponent(key);
+// ── Gemini REST call (single model) ──────────────────────────────────────────
 
-  const prompt = `
-Return ONLY JSON. No markdown. No extra text.
+type GeminiCallError = Error & { status?: number; isStructuredUnsupported: boolean };
 
-Goal: ${params.userGoal}
-Diet preferences: ${params.dietPrefs.join(", ") || "none"}
-Allergies: ${params.allergies.join(", ") || "none"}
+type GeminiResponseData = {
+  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+};
 
-Task:
-- Analyze the menu photo.
-- Return dishes in 3 groups: topPicks, caution, avoid.
-- Return up to 3 dishes per group.
-- Each dish: name, short reason, 0-3 tags.
-- Add warnings array.
-`;
-
-  const body = {
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { text: prompt },
-          {
-            inlineData: {
-              mimeType: params.mimeType,
-              data: params.imageBase64,
-            },
-          },
-        ],
-      },
-    ],
-    generationConfig: {
-      response_mime_type: "application/json",
-      response_json_schema: MENU_SCHEMA,
-      temperature: 0.2,
-      maxOutputTokens: 1200,
-    },
-  };
-
+async function callGeminiModel(model: string, key: string, body: object): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
   const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Gemini error ${res.status}: ${errText}`);
+    const structured = (res.status === 400 || res.status === 422) && isStructuredOutputUnsupported(errText);
+    const err = Object.assign(
+      new Error(`Gemini ${res.status} (${model}): ${errText}`),
+      { status: res.status, isStructuredUnsupported: structured }
+    ) as GeminiCallError;
+    throw err;
   }
 
-  const data = await res.json();
+  const data = (await res.json()) as GeminiResponseData;
+  return (
+    data?.candidates?.[0]?.content?.parts
+      ?.map((p) => p?.text)
+      .filter(Boolean)
+      .join('') ?? ''
+  );
+}
 
-  const raw =
-    data?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).filter(Boolean).join("") ?? "";
+// ── Public API ────────────────────────────────────────────────────────────────
 
-  if (!raw) throw new Error("Empty model response");
+export type AnalyzeMenuImagesInput = { base64: string; mimeType: string }[];
 
-  try {
-    return JSON.parse(raw) as MenuAnalysis;
-  } catch (parseError) {
-    // Retry with stricter prompt
-    const retryPrompt = `Return ONLY JSON. No markdown. No extra text.
+export async function analyzeMenuWithGemini(params: {
+  images: AnalyzeMenuImagesInput;
+  userGoal: Goal;
+  dietPrefs: string[];
+  allergies: string[];
+  dislikes?: string[];
+  pinWhitelist: string[];
+}): Promise<MenuAnalysisResponse> {
+  const key = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+  if (!key) throw new Error('Missing EXPO_PUBLIC_GEMINI_API_KEY');
+
+  const dislikesLine = params.dislikes?.length
+    ? `Dislikes (avoid recommending; if a top dish contains one, set noLine e.g. "No tomato"): ${params.dislikes.join(', ')}`
+    : '';
+  const pinList = params.pinWhitelist.join(', ');
+
+  const prompt = `Return ONLY JSON. No markdown. No extra text.
 
 Goal: ${params.userGoal}
-Diet preferences: ${params.dietPrefs.join(", ") || "none"}
-Allergies: ${params.allergies.join(", ") || "none"}
+Diet preferences (use only these for dietBadges): ${params.dietPrefs.join(', ') || 'none'}
+Allergies: ${params.allergies.join(', ') || 'none'}
+${dislikesLine}
+
+Pin whitelist (choose ONLY from this list; 3-4 unique pins per dish): ${pinList}
 
 Task:
-- Analyze the menu photo.
-- Return dishes in 3 groups: topPicks, caution, avoid.
-- Return up to 3 dishes per group.
-- Each dish: name, short reason, 0-3 tags.
-- Add warnings array.`;
+- Analyze ALL provided menu images together as one menu.
+- Output language: English for all fields EXCEPT dish name. Dish name must be copied EXACTLY as written on the menu (do not translate).
+- Return 3 groups: topPicks (max 3), caution, avoid.
+- Each dish: name, shortReason (one short sentence, EN), pins (3-4 unique from whitelist), confidencePercent (0-100), dietBadges (subset of user diet preferences only), allergenNote, noLine.
+- allergenNote: if user has allergies selected, must be either "Allergen safe" or "May contain allergens - ask the waiter". If user has no allergies: null.
+- noLine: only from dislikes; if dish contains a disliked ingredient, set e.g. "No tomato". Otherwise null.
+- If a top pick contains a disliked ingredient it may stay in topPicks but you MUST set noLine.`;
 
-    const retryBody = {
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: retryPrompt },
-            {
-              inlineData: {
-                mimeType: params.mimeType,
-                data: params.imageBase64,
-              },
-            },
-          ],
-        },
-      ],
-      generationConfig: {
-        response_mime_type: "application/json",
-        response_json_schema: MENU_SCHEMA,
-        temperature: 0.2,
-        maxOutputTokens: 1200,
-      },
-    };
+  const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [
+    { text: prompt },
+  ];
+  for (const img of params.images) {
+    parts.push({ inlineData: { mimeType: img.mimeType, data: img.base64 } });
+  }
 
-    const retryRes = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(retryBody),
-    });
+  const body = {
+    contents: [{ role: 'user', parts }],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: MENU_RESPONSE_SCHEMA,
+      temperature: 0.2,
+      maxOutputTokens: 4096,
+    },
+  };
 
-    if (!retryRes.ok) {
-      const errText = await retryRes.text();
-      console.warn(`Menu analysis JSON parse failed, retry also failed: ${errText}`);
-      throw new Error(`Gemini error ${retryRes.status}: ${errText}`);
-    }
+  // Try models in chain; fall back on structured-output-unsupported errors only.
+  const models = buildModelChain();
+  let rawOutput = '';
+  let usedModel = models[0];
 
-    const retryData = await retryRes.json();
-    const retryRaw =
-      retryData?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).filter(Boolean).join("") ?? "";
-
-    if (!retryRaw) {
-      console.warn("Menu analysis JSON parse failed, retry returned empty response");
-      throw new Error("Empty model response after retry");
-    }
-
+  for (let i = 0; i < models.length; i++) {
+    const model = models[i];
+    usedModel = model;
     try {
-      return JSON.parse(retryRaw) as MenuAnalysis;
-    } catch (retryParseError) {
-      console.warn(`Menu analysis JSON parse failed after retry: ${retryParseError instanceof Error ? retryParseError.message : String(retryParseError)}`);
-      throw new Error("Model returned invalid JSON after retry");
+      rawOutput = await callGeminiModel(model, key, body);
+      break; // success — exit loop
+    } catch (e) {
+      const callErr = e as GeminiCallError;
+      const isLast = i === models.length - 1;
+
+      if (callErr.isStructuredUnsupported && !isLast) {
+        // structured output not supported by this model — try next
+        continue;
+      }
+
+      if (callErr.isStructuredUnsupported) {
+        // all models exhausted
+        throw new MenuAnalysisInvalidJsonError({
+          raw: '',
+          model,
+          status: callErr.status,
+          message: `All models rejected structured output. Last error: ${callErr.message}`,
+        });
+      }
+
+      throw e; // non-structural error — propagate as-is
     }
+  }
+
+  if (!rawOutput) {
+    throw new MenuAnalysisInvalidJsonError({
+      raw: '',
+      model: usedModel,
+      message: 'Empty model response',
+    });
+  }
+
+  // Parse JSON — always capture raw for debug even with structured output enabled.
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawOutput);
+  } catch {
+    throw new MenuAnalysisInvalidJsonError({
+      raw: rawOutput,
+      model: usedModel,
+      message: 'Model returned invalid JSON',
+    });
+  }
+
+  // Contract validation — wrap issues in MenuAnalysisInvalidJsonError so raw is always attached.
+  try {
+    return validateMenuAnalysisResponse({
+      response: parsed,
+      goal: params.userGoal,
+      pinWhitelist: params.pinWhitelist,
+      selectedDietPreferences: params.dietPrefs as DietaryPreference[],
+      selectedAllergies: params.allergies as Allergy[],
+      dislikes: params.dislikes ?? [],
+    });
+  } catch (e) {
+    if (e instanceof MenuAnalysisValidationError) {
+      throw new MenuAnalysisInvalidJsonError({
+        raw: rawOutput,
+        model: usedModel,
+        message: e.message,
+        issues: e.issues,
+      });
+    }
+    throw e;
   }
 }

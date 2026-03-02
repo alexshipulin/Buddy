@@ -16,11 +16,10 @@ import { spec } from '../design/spec';
 import { typography } from '../ui/typography';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GoalSelection'>;
-type GoalCard = Goal | 'Eat healthier';
-const goals: GoalCard[] = ['Lose fat', 'Maintain weight', 'Gain muscle', 'Eat healthier'];
+const goals: Goal[] = ['Lose fat', 'Maintain weight', 'Gain muscle', 'Eat healthier'];
 
 export function GoalSelectionScreen({ navigation }: Props): React.JSX.Element {
-  const [selected, setSelected] = React.useState<GoalCard | null>(null);
+  const [selected, setSelected] = React.useState<Goal | null>(null);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const pagePaddingX = getPagePaddingX(width);
@@ -31,13 +30,15 @@ export function GoalSelectionScreen({ navigation }: Props): React.JSX.Element {
 
   const onContinue = async (): Promise<void> => {
     if (!selected) return;
-    const mappedGoal: Goal = selected === 'Eat healthier' ? 'Maintain weight' : selected;
-    await userRepo.saveUser({ goal: mappedGoal, dietaryPreferences: [], allergies: [] });
+    // #region agent log
+    fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',location:'GoalSelectionScreen.tsx:onContinue',message:'saving goal with empty dislikes',hypothesisId:'D',data:{goal:selected,dislikes:[]},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    await userRepo.saveUser({ goal: selected, dietaryPreferences: [], allergies: [], dislikes: [] });
     navigation.navigate('DietaryProfile');
   };
 
   const onSkip = (): void => {
-    userRepo.saveUser({ goal: 'Maintain weight', dietaryPreferences: [], allergies: [] }).then(() => {
+    userRepo.saveUser({ goal: 'Maintain weight', dietaryPreferences: [], allergies: [], dislikes: [] }).then(() => {
       navigation.navigate('DietaryProfile');
     });
   };

@@ -1,8 +1,8 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { RootStackParamList } from '../app/navigation/types';
-import { Allergy, DietaryPreference } from '../domain/models';
+import { ALLERGY_OPTIONS, Allergy, DietaryPreference } from '../domain/models';
 import { userRepo } from '../services/container';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Chip } from '../ui/components/Chip';
@@ -16,41 +16,64 @@ import { typography } from '../ui/typography';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DietaryProfile'>;
 const preferences: DietaryPreference[] = ['Vegan or vegetarian', 'Pescatarian', 'Semi-vegetarian', 'Gluten-free', 'Lactose-free', 'Keto', 'Paleo (whole foods)'];
-const allergies: Allergy[] = ['Milk', 'Eggs', 'Fish', 'Crustacean shellfish (shrimp, crab, lobster)', 'Tree nuts (almonds, walnuts, cashews)', 'Peanuts', 'Wheat', 'Soy', 'Sesame', 'Celery', 'Lupin', 'Molluscs (squid, mussels, snails)', 'Mustard', 'Sulphites'];
-const DISLIKES_PRESET = ['Avocado', 'Mushrooms', 'Olives', 'Cilantro', 'Onions'];
+
+function normalizeDislikeKey(s: string): string {
+  return s.trim().toLowerCase();
+}
 
 export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const scrollPaddingBottom = getCTATotalHeight(insets.bottom) + spec.spacing[12];
   const [selectedPreferences, setSelectedPreferences] = React.useState<DietaryPreference[]>([]);
   const [selectedAllergies, setSelectedAllergies] = React.useState<Allergy[]>([]);
-  const [selectedDislikes, setSelectedDislikes] = React.useState<string[]>([]);
-  const [customDislikes, setCustomDislikes] = React.useState<string[]>([]);
-  const [addOtherVisible, setAddOtherVisible] = React.useState(false);
-  const [addOtherInput, setAddOtherInput] = React.useState('');
+  const [dislikes, setDislikes] = React.useState<string[]>([]);
+  const [dislikeInput, setDislikeInput] = React.useState('');
+
+  React.useEffect(() => {
+    void (async () => {
+      const user = await userRepo.getUser();
+      // #region agent log
+      fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',location:'DietaryProfileScreen.tsx:useEffect',message:'user loaded',hypothesisId:'D',data:{hasUser:!!user,goal:user?.goal,prefsCount:user?.dietaryPreferences?.length??0,allergiesCount:user?.allergies?.length??0,dislikesCount:user?.dislikes?.length??0,dislikes:user?.dislikes??[]},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      if (user) {
+        if (user.dietaryPreferences?.length) setSelectedPreferences(user.dietaryPreferences);
+        if (user.allergies?.length) {
+          const allowed = user.allergies.filter((a) => ALLERGY_OPTIONS.includes(a));
+          if (allowed.length) setSelectedAllergies(allowed);
+        }
+        if (user.dislikes?.length) setDislikes(user.dislikes);
+      }
+    })();
+  }, []);
 
   const togglePref = (v: DietaryPreference): void => setSelectedPreferences((p) => (p.includes(v) ? p.filter((x) => x !== v) : [...p, v]));
   const toggleAllergy = (v: Allergy): void => setSelectedAllergies((p) => (p.includes(v) ? p.filter((x) => x !== v) : [...p, v]));
-  const toggleDislike = (v: string): void => setSelectedDislikes((p) => (p.includes(v) ? p.filter((x) => x !== v) : [...p, v]));
-  const addCustomDislike = (): void => {
-    const trimmed = addOtherInput.trim();
-    if (trimmed && !customDislikes.includes(trimmed) && !DISLIKES_PRESET.includes(trimmed)) {
-      setCustomDislikes((prev) => [...prev, trimmed]);
-      setSelectedDislikes((prev) => [...prev, trimmed]);
-      setAddOtherInput('');
-      setAddOtherVisible(false);
-    }
+
+  const addDislike = (): void => {
+    const trimmed = dislikeInput.trim();
+    if (!trimmed) return;
+    const key = normalizeDislikeKey(trimmed);
+    if (dislikes.some((d) => normalizeDislikeKey(d) === key)) return;
+    setDislikes((prev) => [...prev, trimmed]);
+    setDislikeInput('');
   };
+  const removeDislike = (item: string): void => setDislikes((prev) => prev.filter((d) => d !== item));
 
   const goHome = (): void => navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
   const onSave = async (): Promise<void> => {
     const user = await userRepo.getUser();
     if (!user) return navigation.replace('GoalSelection');
-    await userRepo.saveUser({ ...user, dietaryPreferences: selectedPreferences, allergies: selectedAllergies });
+    // #region agent log
+    fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',location:'DietaryProfileScreen.tsx:onSave',message:'saving profile',hypothesisId:'D',data:{goal:user.goal,prefs:selectedPreferences,allergies:selectedAllergies,dislikes,dislikesCount:dislikes.length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    await userRepo.saveUser({
+      ...user,
+      dietaryPreferences: selectedPreferences,
+      allergies: selectedAllergies,
+      dislikes,
+    });
     goHome();
   };
-
-  const allDislikes = [...DISLIKES_PRESET, ...customDislikes];
 
   return (
     <Screen hasBottomCTA>
@@ -81,44 +104,41 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
         <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.2}>Common allergies</Text>
         <View style={styles.chipsWrap}>
           <Chip label="None" selected={selectedAllergies.length === 0} onPress={() => setSelectedAllergies([])} />
-          {allergies.slice(0, 8).map((allergy) => <Chip key={allergy} label={allergy} selected={selectedAllergies.includes(allergy)} onPress={() => toggleAllergy(allergy)} />)}
+          {ALLERGY_OPTIONS.map((allergy) => (
+            <Chip key={allergy} label={allergy} selected={selectedAllergies.includes(allergy)} onPress={() => toggleAllergy(allergy)} />
+          ))}
         </View>
         <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.2}>Dislikes</Text>
-        <View style={styles.chipsWrap}>
-          {allDislikes.map((label) => (
-            <Chip key={label} label={label} selected={selectedDislikes.includes(label)} onPress={() => toggleDislike(label)} />
-          ))}
-          <Pressable style={styles.addOther} onPress={() => setAddOtherVisible(true)}>
-            <Text style={styles.addOtherText}>+ Add other</Text>
+        <View style={styles.dislikeRow}>
+          <TextInput
+            style={styles.dislikeInput}
+            placeholder="Add an ingredient you dislike"
+            placeholderTextColor={appTheme.colors.placeholder}
+            value={dislikeInput}
+            onChangeText={setDislikeInput}
+            onSubmitEditing={addDislike}
+            returnKeyType="done"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <Pressable style={styles.addDislikeBtn} onPress={addDislike}>
+            <Text style={styles.addDislikeBtnText}>Add</Text>
           </Pressable>
+        </View>
+        <View style={styles.chipsWrap}>
+          {dislikes.map((label) => (
+            <View key={label} style={styles.removableChip}>
+              <Text style={styles.removableChipText} numberOfLines={1}>{label}</Text>
+              <Pressable hitSlop={8} onPress={() => removeDislike(label)} style={styles.removeChipBtn}>
+                <Text style={styles.removeChipIcon}>×</Text>
+              </Pressable>
+            </View>
+          ))}
         </View>
       </ScrollView>
       <BottomCTA>
         <PrimaryButton title="Save" onPress={onSave} />
       </BottomCTA>
-
-      <Modal visible={addOtherVisible} transparent animationType="fade">
-        <Pressable style={styles.modalBackdrop} onPress={() => setAddOtherVisible(false)}>
-          <Pressable style={styles.addOtherModal} onPress={() => undefined}>
-            <Text style={styles.addOtherModalTitle}>Add dislike</Text>
-            <TextInput
-              style={styles.addOtherInput}
-              placeholder="e.g. Broccoli"
-              placeholderTextColor={appTheme.colors.placeholder}
-              value={addOtherInput}
-              onChangeText={setAddOtherInput}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <View style={styles.addOtherModalActions}>
-              <PrimaryButton title="Add" onPress={addCustomDislike} style={styles.addOtherModalBtn} />
-              <Pressable onPress={() => { setAddOtherVisible(false); setAddOtherInput(''); }}>
-                <Text style={styles.addOtherCancel}>Cancel</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </Screen>
   );
 }
@@ -145,22 +165,39 @@ const styles = StyleSheet.create({
   subtitle: { ...typography.body, color: appTheme.colors.muted, marginTop: spec.spacing[8] },
   sectionTitle: { ...typography.h2, marginTop: spec.spacing[24] },
   chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spec.spacing[12] },
-  addOther: {
-    minHeight: spec.chipHeight,
-    borderRadius: spec.chipRadius,
+  dislikeRow: { flexDirection: 'row', alignItems: 'center', gap: spec.spacing[8], marginTop: spec.spacing[4] },
+  dislikeInput: {
+    flex: 1,
     borderWidth: 1,
     borderColor: appTheme.colors.border,
-    borderStyle: 'dashed',
-    paddingHorizontal: spec.chipPaddingX,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: spec.inputRadius,
+    paddingHorizontal: spec.inputPaddingX,
+    paddingVertical: spec.spacing[12],
+    fontSize: appTheme.typography.body.fontSize,
+    minHeight: spec.inputHeight,
+    color: appTheme.colors.textPrimary,
   },
-  addOtherText: { color: appTheme.colors.muted, fontSize: appTheme.typography.body.fontSize, fontWeight: '500' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: spec.spacing[20] },
-  addOtherModal: { backgroundColor: appTheme.colors.surface, borderRadius: spec.cardRadius, padding: spec.cardPadding, gap: spec.spacing[16], ...appTheme.shadows.modal },
-  addOtherModalTitle: { ...typography.h2 },
-  addOtherInput: { borderWidth: 1, borderColor: appTheme.colors.border, borderRadius: spec.inputRadius, paddingHorizontal: spec.inputPaddingX, paddingVertical: spec.spacing[12], fontSize: appTheme.typography.body.fontSize, minHeight: spec.inputHeight },
-  addOtherModalActions: { flexDirection: 'row', alignItems: 'center', gap: spec.spacing[16] },
-  addOtherModalBtn: { flex: 1 },
-  addOtherCancel: { color: appTheme.colors.muted, ...appTheme.typography.bodySemibold },
+  addDislikeBtn: {
+    minHeight: spec.inputHeight,
+    paddingHorizontal: spec.spacing[16],
+    justifyContent: 'center',
+    borderRadius: spec.inputRadius,
+    backgroundColor: appTheme.colors.ink,
+  },
+  addDislikeBtnText: { ...typography.bodySemibold, color: appTheme.colors.primaryText },
+  removableChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: spec.chipHeight,
+    paddingLeft: spec.chipPaddingX,
+    paddingRight: spec.spacing[4],
+    borderRadius: spec.chipRadius,
+    backgroundColor: appTheme.colors.surface,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+    maxWidth: '100%',
+  },
+  removableChipText: { ...typography.caption, color: appTheme.colors.textPrimary, maxWidth: 160 },
+  removeChipBtn: { padding: spec.spacing[4], marginLeft: spec.spacing[4] },
+  removeChipIcon: { fontSize: 20, color: appTheme.colors.muted, fontWeight: '600' },
 });

@@ -4,6 +4,7 @@ export const mockProfile: UserProfile = {
   goal: 'Lose fat',
   dietaryPreferences: ['Gluten-free'],
   allergies: ['Eggs'],
+  dislikes: [],
   baseParams: {
     heightCm: 175,
     weightKg: 72,

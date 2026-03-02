@@ -5,6 +5,10 @@ import { UserRepo } from '../data/repos/UserRepo';
 import { TEST_MODE } from '../config/flags';
 import { createId } from '../utils/id';
 
+export { MenuAnalysisFailedError } from '../data/providers/GeminiMenuAnalysisProvider';
+export { MenuAnalysisValidationError } from '../validation/menuAnalysisValidator';
+export { MenuAnalysisInvalidJsonError } from '../ai/menuAnalysis';
+
 type Deps = { historyRepo: HistoryRepo; userRepo: UserRepo; trialRepo: TrialRepo; menuProvider: MenuAnalysisProvider };
 
 export class DailyScanLimitReachedError extends Error {
@@ -19,10 +23,9 @@ export type AnalyzeMenuOutput = { resultId: string; shouldShowPaywallAfterResult
 export async function analyzeMenuUseCase(images: string[], deps: Deps): Promise<AnalyzeMenuOutput> {
   const user = await deps.userRepo.getUser();
   if (!user) throw new Error('User profile is not set');
-  // Post-trial free users are limited to one scan per day.
   if (!TEST_MODE) {
-    const allowed = await deps.trialRepo.incrementDailyScanIfAllowed();
-    if (!allowed) throw new DailyScanLimitReachedError();
+    const canScan = await deps.trialRepo.canScanToday();
+    if (!canScan) throw new DailyScanLimitReachedError();
   }
   const result = await deps.menuProvider.analyzeMenu(images, user);
   await deps.historyRepo.saveScanResult(result);
@@ -34,7 +37,9 @@ export async function analyzeMenuUseCase(images: string[], deps: Deps): Promise<
     payloadRef: result.id,
     imageUris: images,
   });
+  if (!TEST_MODE) {
+    await deps.trialRepo.incrementDailyScanAfterSuccess();
+  }
   const first = await deps.trialRepo.registerFirstResultIfNeeded(new Date());
-  // Product rule: show paywall immediately after the first complete result.
   return { resultId: result.id, shouldShowPaywallAfterResults: first.isFirstResult, trialDaysLeft: deps.trialRepo.getTrialDaysLeft(first.state, new Date()) };
 }

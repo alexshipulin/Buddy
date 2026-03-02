@@ -1,29 +1,24 @@
-import { DishRecommendation, MenuScanResult, UserProfile } from '../../domain/models';
+import { DishPick, MenuScanResult, UserProfile } from '../../domain/models';
 import { createId } from '../../utils/id';
 import { MenuAnalysisProvider } from './MenuAnalysisProvider';
 
-function pickPreset(user: UserProfile): { topPicks: DishRecommendation[]; caution: DishRecommendation[]; avoid: DishRecommendation[]; summaryText: string } {
-  const topPicks: DishRecommendation[] = [
-    { name: 'Grilled salmon with greens', reasonShort: 'High protein and healthy fats.', tags: ['High protein', 'Omega-3', 'Lower sodium'] },
-    { name: 'Chicken salad', reasonShort: 'Lean protein with fiber-rich vegetables.', tags: ['High protein', 'Lower calories', 'High fiber'] },
-    { name: 'Rice bowl with tofu', reasonShort: 'Plant protein and controlled energy density.', tags: ['Vegetarian-friendly', 'High fiber'] },
+function pickPreset(_user: UserProfile): { topPicks: DishPick[]; caution: DishPick[]; avoid: DishPick[]; summaryText: string } {
+  const topPicks: DishPick[] = [
+    { name: 'Grilled salmon with greens', shortReason: 'High protein and healthy fats.', pins: ['High protein', 'Lean protein', 'Lower sodium'], confidencePercent: 88, dietBadges: [], allergenNote: 'Allergen safe', noLine: null },
+    { name: 'Chicken salad', shortReason: 'Lean protein with fiber-rich vegetables.', pins: ['High protein', 'Lower calorie', 'High fiber'], confidencePercent: 85, dietBadges: [], allergenNote: 'Allergen safe', noLine: null },
+    { name: 'Rice bowl with tofu', shortReason: 'Plant protein and controlled energy density.', pins: ['Whole foods', 'High fiber', 'Vegetable-forward'], confidencePercent: 82, dietBadges: [], allergenNote: 'Allergen safe', noLine: null },
   ];
-  const caution: DishRecommendation[] = [
-    { name: 'Teriyaki chicken', reasonShort: 'Protein is good, but sauce can add sugar and sodium.', tags: ['Lower sugar', 'Lower sodium'] },
-    { name: 'Veggie wrap', reasonShort: 'Mostly fine, though tortillas and sauces can shift macros.', tags: ['Vegetarian-friendly'] },
-    { name: 'Granola bowl', reasonShort: 'Looks healthy but can be calorie dense with sweeteners.', tags: ['High fiber', 'Lower sugar'] },
+  const caution: DishPick[] = [
+    { name: 'Teriyaki chicken', shortReason: 'Protein is good, but sauce can add sugar and sodium.', pins: ['Lower sugar', 'Lower sodium', 'Moderate protein'], confidencePercent: 65, dietBadges: [], allergenNote: null, noLine: null },
+    { name: 'Veggie wrap', shortReason: 'Mostly fine, though tortillas and sauces can shift macros.', pins: ['Vegetable-forward', 'Fiber'], confidencePercent: 60, dietBadges: [], allergenNote: null, noLine: null },
+    { name: 'Granola bowl', shortReason: 'Looks healthy but can be calorie dense with sweeteners.', pins: ['High fiber', 'Lower sugar'], confidencePercent: 55, dietBadges: [], allergenNote: null, noLine: null },
   ];
-  const avoid: DishRecommendation[] = [
-    { name: 'Deep-fried combo platter', reasonShort: 'Very high energy density and low satiety quality.', tags: ['Lower calories'] },
-    { name: 'Loaded nachos', reasonShort: 'Portion size and toppings make goals harder to hit.', tags: ['Lower sodium'] },
-    { name: 'Creamy pasta alfredo', reasonShort: 'High fat and calories can conflict with your targets.', tags: ['Lower calories'] },
+  const avoid: DishPick[] = [
+    { name: 'Deep-fried combo platter', shortReason: 'Very high energy density and low satiety quality.', pins: ['No fried', 'Portion control', 'Whole foods'], confidencePercent: 90, dietBadges: [], allergenNote: null, noLine: null },
+    { name: 'Loaded nachos', shortReason: 'Portion size and toppings make goals harder to hit.', pins: ['Lower sodium', 'Portion control', 'Balanced'], confidencePercent: 85, dietBadges: [], allergenNote: null, noLine: null },
+    { name: 'Creamy pasta alfredo', shortReason: 'High fat and calories can conflict with your targets.', pins: ['Lower calorie', 'Balanced', 'Portion aware'], confidencePercent: 88, dietBadges: [], allergenNote: null, noLine: null },
   ];
-  const summaryText =
-    user.goal === 'Gain muscle'
-      ? 'Buddy ranked dishes for muscle gain and your preferences.'
-      : user.goal === 'Lose fat'
-        ? 'Buddy ranked dishes for fat loss and your preferences.'
-        : 'Buddy ranked dishes for maintenance and your preferences.';
+  const summaryText = 'Demo result - AI not configured';
   return { topPicks, caution, avoid, summaryText };
 }
 

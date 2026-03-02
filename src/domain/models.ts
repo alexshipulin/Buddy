@@ -1,4 +1,4 @@
-export type Goal = 'Lose fat' | 'Maintain weight' | 'Gain muscle';
+export type Goal = 'Lose fat' | 'Maintain weight' | 'Gain muscle' | 'Eat healthier';
 export type DietaryPreference =
   | 'Vegan or vegetarian'
   | 'Pescatarian'
@@ -11,10 +11,24 @@ export type ActivityLevel = 'Low' | 'Medium' | 'High';
 export type Sex = 'Male' | 'Female' | 'Other' | 'Prefer not to say';
 export type Allergy = string;
 
+/** Fixed list from TZ (MVP). UI must only offer these; no extra allergies. */
+export const ALLERGY_OPTIONS: readonly string[] = [
+  'Milk',
+  'Eggs',
+  'Fish',
+  'Crustacean shellfish (shrimp, crab, lobster)',
+  'Tree nuts (almonds, walnuts, cashews)',
+  'Peanuts',
+  'Wheat',
+  'Soy',
+] as const;
+
 export type UserProfile = {
   goal: Goal;
   dietaryPreferences: DietaryPreference[];
   allergies: Allergy[];
+  /** Dynamic list; normalize whitespace/casing for duplicates only. */
+  dislikes?: string[];
   baseParams?: { heightCm: number; weightKg: number; activityLevel: ActivityLevel; age?: number; sex?: Sex };
 };
 
@@ -27,26 +41,36 @@ export type HistoryItem = {
   payloadRef: string;
   imageUris?: string[];
 };
-export type DishRecommendation = {
+/** Menu scan dish (TZ v0.1). Used in MenuScanResult topPicks/caution/avoid. */
+export type DishPick = {
   name: string;
-  reasonShort: string;
-  tags: string[];
-  /** Optional: from AI or backend. When present, macro grid is shown. */
-  macros?: MacroTotals;
-  /** Optional: 0–100 match score for badge. */
-  matchPercent?: number;
-  /** Optional: e.g. "Contains Eggs". When set, shown instead of "Allergen safe". */
-  warningLabel?: string;
+  shortReason: string;
+  pins: string[];
+  confidencePercent: number;
+  dietBadges: string[];
+  allergenNote: string | null;
+  noLine: string | null;
 };
+
 export type MenuScanResult = {
   id: string;
   createdAt: string;
   inputImages: string[];
-  topPicks: DishRecommendation[];
-  caution: DishRecommendation[];
-  avoid: DishRecommendation[];
+  topPicks: DishPick[];
+  caution: DishPick[];
+  avoid: DishPick[];
   summaryText: string;
   disclaimerFlag: true;
+};
+
+/** Legacy / other flows. Prefer DishPick for menu scan results. */
+export type DishRecommendation = {
+  name: string;
+  reasonShort: string;
+  tags: string[];
+  macros?: MacroTotals;
+  matchPercent?: number;
+  warningLabel?: string;
 };
 export type MealEntry = {
   id: string;

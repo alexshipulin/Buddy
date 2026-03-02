@@ -1,17 +1,9 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
-import {
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../app/navigation/types';
-import { DishRecommendation, MenuScanResult } from '../domain/models';
+import { DishPick, MenuScanResult } from '../domain/models';
 import { USE_MOCK_DATA } from '../config/local';
 import { mockTopPicksResult } from '../mock/topPicks';
 import { addMealUseCase } from '../services/addMealUseCase';
@@ -21,7 +13,6 @@ import { Card } from '../ui/components/Card';
 import { Chip } from '../ui/components/Chip';
 import { PrimaryButton } from '../ui/components/PrimaryButton';
 import { Screen } from '../ui/components/Screen';
-import { SecondaryButton } from '../ui/components/SecondaryButton';
 import { appTheme } from '../design/theme';
 import { spec } from '../design/spec';
 import { typography } from '../ui/typography';
@@ -37,68 +28,43 @@ function TopPickCard({
   onTakeDish,
   onAskBuddy,
 }: {
-  item: DishRecommendation;
-  onTakeDish: (d: DishRecommendation) => void;
-  onAskBuddy: (d: DishRecommendation) => void;
+  item: DishPick;
+  onTakeDish: (d: DishPick) => void;
+  onAskBuddy: (d: DishPick) => void;
 }): React.JSX.Element {
-  const hasMacros = Boolean(item.macros);
+  const highConfidence = item.confidencePercent >= 70;
   return (
     <Card style={styles.topPickCard}>
-      <View style={styles.cardHead}>
-        <View style={styles.cardHeadText}>
-          <Text style={styles.dishName} numberOfLines={2} maxFontSizeMultiplier={1.2}>{item.name}</Text>
-          <Text style={styles.reason} numberOfLines={2} maxFontSizeMultiplier={1.2}>{item.reasonShort}</Text>
+      <Text style={styles.dishName} numberOfLines={2} maxFontSizeMultiplier={1.2}>{item.name}</Text>
+      <Text style={styles.reason} numberOfLines={2} maxFontSizeMultiplier={1.2}>{item.shortReason}</Text>
+      <View style={styles.confidenceRow}>
+        <View style={styles.confidenceChip}>
+          <Text style={styles.confidenceChipText} maxFontSizeMultiplier={1.2}>{item.confidencePercent}% confidence</Text>
         </View>
-        {item.matchPercent != null && (
-          <View style={styles.matchBadge}>
-            <Text style={styles.matchText} maxFontSizeMultiplier={1.2}>{item.matchPercent}% match</Text>
-          </View>
+        {highConfidence && (
+          <Text style={styles.highConfidenceText} maxFontSizeMultiplier={1.2}>High confidence</Text>
         )}
       </View>
-      {hasMacros && item.macros && (
-        <View style={styles.macroGrid}>
-          <View style={styles.macroCol}>
-            <Text style={styles.macroLabel} maxFontSizeMultiplier={1.2}>Cals</Text>
-            <Text style={styles.macroValue} maxFontSizeMultiplier={1.2}>{item.macros.caloriesKcal}</Text>
-          </View>
-          <View style={[styles.macroCol, styles.macroColBorder]}>
-            <Text style={styles.macroLabel} maxFontSizeMultiplier={1.2}>P</Text>
-            <Text style={styles.macroValue} maxFontSizeMultiplier={1.2}>{item.macros.proteinG}g</Text>
-          </View>
-          <View style={[styles.macroCol, styles.macroColBorder]}>
-            <Text style={styles.macroLabel} maxFontSizeMultiplier={1.2}>C</Text>
-            <Text style={styles.macroValue} maxFontSizeMultiplier={1.2}>{item.macros.carbsG}g</Text>
-          </View>
-          <View style={[styles.macroCol, styles.macroColBorder]}>
-            <Text style={styles.macroLabel} maxFontSizeMultiplier={1.2}>F</Text>
-            <Text style={styles.macroValue} maxFontSizeMultiplier={1.2}>{item.macros.fatG}g</Text>
-          </View>
-        </View>
-      )}
-      {item.tags.length > 0 && (
-        <View style={styles.tagsRow}>
-          {item.tags.map((tag) => (
-            <Chip key={`${item.name}_${tag}`} label={tag} small />
+      {(item.pins?.length ?? 0) > 0 && (
+        <View style={styles.chipsRow}>
+          {item.pins.map((pin) => (
+            <Chip key={`${item.name}_pin_${pin}`} label={pin} small />
           ))}
         </View>
       )}
-      <View style={styles.statusRow}>
-        {item.warningLabel ? (
-          <View style={styles.statusItem}>
-            <Text style={styles.statusWarningIcon}>⚠</Text>
-            <Text style={styles.statusText} maxFontSizeMultiplier={1.2}>{item.warningLabel}</Text>
-          </View>
-        ) : (
-          <View style={styles.statusItem}>
-            <Text style={styles.statusOkIcon}>✓</Text>
-            <Text style={styles.statusText} maxFontSizeMultiplier={1.2}>Allergen safe</Text>
-          </View>
-        )}
-        <View style={styles.statusItem}>
-          <Text style={styles.sparkleIcon}>✦</Text>
-          <Text style={styles.statusMuted} maxFontSizeMultiplier={1.2}>High confidence analysis</Text>
+      {(item.dietBadges?.length ?? 0) > 0 && (
+        <View style={styles.chipsRow}>
+          {item.dietBadges.map((badge) => (
+            <Chip key={`${item.name}_diet_${badge}`} label={badge} small />
+          ))}
         </View>
-      </View>
+      )}
+      {item.allergenNote != null && (
+        <Text style={styles.extraLine} maxFontSizeMultiplier={1.2}>{item.allergenNote}</Text>
+      )}
+      {item.noLine != null && (
+        <Text style={styles.extraLine} maxFontSizeMultiplier={1.2}>{item.noLine}</Text>
+      )}
       <View style={styles.cardActions}>
         <PrimaryButton title="I take it" style={styles.takeBtn} onPress={() => onTakeDish(item)} />
         <Pressable onPress={() => onAskBuddy(item)} style={styles.askBuddyCardLink} hitSlop={8}>
@@ -113,30 +79,30 @@ function CautionCard({
   item,
   onTakeDish,
 }: {
-  item: DishRecommendation;
-  onTakeDish: (d: DishRecommendation) => void;
+  item: DishPick;
+  onTakeDish: (d: DishPick) => void;
 }): React.JSX.Element {
-  const firstTag = item.tags[0];
+  const firstPin = item.pins?.[0];
   return (
     <Pressable style={styles.compactCard} onPress={() => onTakeDish(item)}>
       <View style={styles.compactHead}>
         <Text style={styles.compactTitle} numberOfLines={1} maxFontSizeMultiplier={1.2}>{item.name}</Text>
-        {firstTag && (
+        {firstPin != null && (
           <View style={styles.cautionTag}>
-            <Text style={styles.cautionTagText} maxFontSizeMultiplier={1.2}>{firstTag}</Text>
+            <Text style={styles.cautionTagText} maxFontSizeMultiplier={1.2}>{firstPin}</Text>
           </View>
         )}
       </View>
-      <Text style={styles.compactReason} numberOfLines={2} maxFontSizeMultiplier={1.2}>{item.reasonShort}</Text>
+      <Text style={styles.compactReason} numberOfLines={2} maxFontSizeMultiplier={1.2}>{item.shortReason}</Text>
     </Pressable>
   );
 }
 
-function AvoidCard({ item }: { item: DishRecommendation }): React.JSX.Element {
+function AvoidCard({ item }: { item: DishPick }): React.JSX.Element {
   return (
     <View style={styles.compactCard}>
       <Text style={styles.compactTitle} numberOfLines={1} maxFontSizeMultiplier={1.2}>{item.name}</Text>
-      <Text style={styles.compactReason} numberOfLines={2} maxFontSizeMultiplier={1.2}>{item.reasonShort}</Text>
+      <Text style={styles.compactReason} numberOfLines={2} maxFontSizeMultiplier={1.2}>{item.shortReason}</Text>
     </View>
   );
 }
@@ -161,17 +127,22 @@ function SectionTitle({
 export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const [result, setResult] = React.useState<MenuScanResult | null>(null);
-  const [whyText, setWhyText] = React.useState<string | null>(null);
   const [paywallHandled, setPaywallHandled] = React.useState(false);
 
   React.useEffect(() => {
     void (async () => {
       if (route.params?.resultId) {
         const byId = await historyRepo.getScanResultById(route.params.resultId);
+        // #region agent log
+        fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',location:'MenuResultsScreen.tsx:useEffect:byId',message:'loaded by resultId',hypothesisId:'C',data:{found:!!byId,hasPins:byId?Array.isArray((byId as any).topPicks?.[0]?.pins):null,firstPick:byId?(byId as any).topPicks?.[0]:null},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         if (byId) return setResult(byId);
       }
       const first = (await historyRepo.listRecent(20)).find((i) => i.type === 'menu_scan');
       const latestResult = first ? await historyRepo.getScanResultById(first.payloadRef) : null;
+      // #region agent log
+      fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',location:'MenuResultsScreen.tsx:useEffect:latest',message:'loaded latest result',hypothesisId:'C',data:{found:!!latestResult,hasPins:latestResult?Array.isArray((latestResult as any).topPicks?.[0]?.pins):null,topPicksCount:latestResult?(latestResult as any).topPicks?.length:null,firstPickKeys:latestResult?(Object.keys((latestResult as any).topPicks?.[0]??{})):null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       if (latestResult) {
         setResult(latestResult);
         return;
@@ -194,17 +165,16 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
     })();
   }, [result]);
 
-  const handleTakeDish = React.useCallback(async (dish: DishRecommendation): Promise<void> => {
+  const handleTakeDish = React.useCallback(async (dish: DishPick): Promise<void> => {
     const mealId = createId('meal');
-    const macros = dish.macros ?? { caloriesKcal: 0, proteinG: 0, carbsG: 0, fatG: 0 };
     await addMealUseCase(
       {
         id: mealId,
         createdAt: new Date().toISOString(),
         title: dish.name,
         source: 'text',
-        macros,
-        notes: dish.reasonShort,
+        macros: { caloriesKcal: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+        notes: dish.shortReason,
       },
       { historyRepo },
     );
@@ -255,7 +225,7 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
               <View style={styles.section}>
                 <SectionTitle icon="👍" iconColor={appTheme.colors.success} title="Top picks" />
                 <View style={styles.cardsColumn}>
-                  {result.topPicks.map((item) => (
+                  {result.topPicks.slice(0, 3).map((item) => (
                     <TopPickCard
                       key={`t_${item.name}`}
                       item={item}
@@ -305,15 +275,6 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
         ) : null}
       </View>
 
-      <Modal transparent visible={Boolean(whyText)} animationType="slide" onRequestClose={() => setWhyText(null)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setWhyText(null)}>
-          <Pressable style={styles.sheet} onPress={() => undefined}>
-            <Text style={styles.sheetTitle} maxFontSizeMultiplier={1.2}>Why this recommendation?</Text>
-            <Text style={styles.sheetText} maxFontSizeMultiplier={1.2}>{whyText}</Text>
-            <SecondaryButton title="Close" onPress={() => setWhyText(null)} />
-          </Pressable>
-        </Pressable>
-      </Modal>
     </Screen>
   );
 }
@@ -352,44 +313,19 @@ const styles = StyleSheet.create({
   sectionTitle: { ...typography.h2, color: appTheme.colors.textPrimary },
   cardsColumn: { gap: spec.spacing[16] },
   topPickCard: { gap: spec.spacing[16] },
-  cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spec.spacing[8] },
-  cardHeadText: { flex: 1, minWidth: 0 },
   dishName: { ...typography.h2, color: appTheme.colors.textPrimary, marginBottom: spec.spacing[4] },
-  reason: { ...typography.caption, color: appTheme.colors.textSecondary },
-  matchBadge: {
+  reason: { ...typography.caption, color: appTheme.colors.textSecondary, marginBottom: spec.spacing[8] },
+  confidenceRow: { flexDirection: 'row', alignItems: 'center', gap: spec.spacing[8], marginBottom: spec.spacing[8] },
+  confidenceChip: {
     backgroundColor: appTheme.colors.successSoft,
     paddingHorizontal: spec.spacing[8],
     paddingVertical: spec.spacing[4],
     borderRadius: spec.radius.input,
   },
-  matchText: { fontSize: appTheme.typography.caption1.fontSize, fontWeight: '700', color: appTheme.colors.success },
-  macroGrid: {
-    flexDirection: 'row',
-    backgroundColor: appTheme.colors.background,
-    borderRadius: spec.radius.input,
-    padding: spec.spacing[12],
-  },
-  macroCol: { flex: 1, alignItems: 'center' },
-  macroColBorder: { borderLeftWidth: 1, borderLeftColor: appTheme.colors.border },
-  macroLabel: {
-    ...typography.overline,
-    color: appTheme.colors.textSecondary,
-    marginBottom: spec.spacing[4],
-  },
-  macroValue: { ...typography.h3, color: appTheme.colors.textPrimary },
-  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spec.spacing[8] },
-  statusRow: {
-    paddingTop: spec.spacing[12],
-    borderTopWidth: 1,
-    borderTopColor: appTheme.colors.border,
-    gap: spec.spacing[4],
-  },
-  statusItem: { flexDirection: 'row', alignItems: 'center', gap: spec.spacing[8] },
-  statusOkIcon: { fontSize: appTheme.typography.footnote.fontSize, color: appTheme.colors.success },
-  statusWarningIcon: { fontSize: appTheme.typography.footnote.fontSize, color: appTheme.colors.warning },
-  sparkleIcon: { fontSize: appTheme.typography.footnote.fontSize, color: appTheme.colors.textSecondary },
-  statusText: { ...typography.caption, color: appTheme.colors.textSecondary },
-  statusMuted: { ...typography.caption, color: appTheme.colors.textSecondary, opacity: 0.9 },
+  confidenceChipText: { fontSize: appTheme.typography.caption1.fontSize, fontWeight: '700', color: appTheme.colors.success },
+  highConfidenceText: { ...typography.footnote, color: appTheme.colors.success, fontWeight: '600' },
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spec.spacing[8], marginBottom: spec.spacing[8] },
+  extraLine: { ...typography.caption, color: appTheme.colors.textSecondary, marginBottom: spec.spacing[4] },
   cardActions: { flexDirection: 'row', gap: spec.spacing[12], marginTop: spec.spacing[4], alignItems: 'center' },
   takeBtn: { flex: 1 },
   askBuddyCardLink: { justifyContent: 'center', minHeight: spec.minTouchTarget, paddingVertical: spec.spacing[4] },
@@ -423,15 +359,4 @@ const styles = StyleSheet.create({
   },
   askBuddyLinkWrap: { alignItems: 'center', paddingVertical: spec.spacing[8], minHeight: spec.minTouchTarget, justifyContent: 'center' },
   askBuddyLink: { ...typography.bodySemibold, color: appTheme.colors.accent },
-  modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#11182755' },
-  sheet: {
-    backgroundColor: appTheme.colors.surface,
-    borderTopLeftRadius: spec.sheetRadius,
-    borderTopRightRadius: spec.sheetRadius,
-    padding: spec.cardPadding,
-    gap: spec.spacing[16],
-    ...appTheme.shadows.modal,
-  },
-  sheetTitle: { ...typography.bodySemibold },
-  sheetText: { ...typography.body, color: appTheme.colors.textSecondary },
 });

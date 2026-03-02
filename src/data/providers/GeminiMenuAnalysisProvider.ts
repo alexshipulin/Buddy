@@ -1,9 +1,17 @@
-import { MenuScanResult, UserProfile } from '../../domain/models';
-import { analyzeMenuWithGemini } from '../../ai/menuAnalysis';
+import { DishPick, MenuScanResult, UserProfile } from '../../domain/models';
+import { analyzeMenuWithGemini, MenuAnalysisInvalidJsonError } from '../../ai/menuAnalysis';
+import { getPinWhitelist } from '../../domain/menuPins';
 import { uriToBase64 } from '../../services/aiService';
 import { createId } from '../../utils/id';
+import { MenuAnalysisValidationError } from '../../validation/menuAnalysisValidator';
 import { MenuAnalysisProvider } from './MenuAnalysisProvider';
-import { MockMenuAnalysisProvider } from './MockMenuAnalysisProvider';
+
+export class MenuAnalysisFailedError extends Error {
+  constructor(message: string, public cause?: unknown) {
+    super(message);
+    this.name = 'MenuAnalysisFailedError';
+  }
+}
 
 function detectMimeType(uri: string): string {
   const normalizedUri = uri.toLowerCase();
@@ -15,45 +23,48 @@ function detectMimeType(uri: string): string {
 }
 
 export class GeminiMenuAnalysisProvider implements MenuAnalysisProvider {
-  private mockProvider = new MockMenuAnalysisProvider();
-
   async analyzeMenu(images: string[], user: UserProfile): Promise<MenuScanResult> {
-    const firstImage = images[0];
-    if (!firstImage) {
-      return this.mockProvider.analyzeMenu(images, user);
+    if (images.length === 0) {
+      throw new MenuAnalysisFailedError('No images provided');
     }
 
+    const imagePayloads: { base64: string; mimeType: string }[] = [];
+    for (const uri of images) {
+      const base64 = await uriToBase64(uri);
+      if (!base64) throw new MenuAnalysisFailedError(`Failed to read image: ${uri.slice(0, 50)}...`);
+      imagePayloads.push({ base64, mimeType: detectMimeType(uri) });
+    }
+
+    const pinWhitelist = getPinWhitelist(user.goal);
+
     try {
-      const base64Image = await uriToBase64(firstImage);
-      if (!base64Image) {
-        return this.mockProvider.analyzeMenu(images, user);
-      }
-
-      const mimeType = detectMimeType(firstImage);
-
       const analysis = await analyzeMenuWithGemini({
-        imageBase64: base64Image,
-        mimeType,
+        images: imagePayloads,
         userGoal: user.goal,
-        dietPrefs: user.dietaryPreferences,
-        allergies: user.allergies,
+        dietPrefs: user.dietaryPreferences ?? [],
+        allergies: user.allergies ?? [],
+        dislikes: user.dislikes,
+        pinWhitelist,
       });
 
-      const summaryText = `Buddy ranked dishes for ${user.goal.toLowerCase()} and your preferences.${analysis.warnings.length > 0 ? ` Warnings: ${analysis.warnings.join('; ')}.` : ''}`;
+      const topPicks: DishPick[] = analysis.topPicks.slice(0, 3);
+      const summaryText = `Buddy ranked dishes for ${user.goal.toLowerCase()} and your preferences.`;
 
       return {
         id: createId('scan'),
         createdAt: new Date().toISOString(),
         inputImages: images,
-        topPicks: analysis.topPicks.map((d) => ({ name: d.name, reasonShort: d.reason, tags: d.tags })),
-        caution: analysis.caution.map((d) => ({ name: d.name, reasonShort: d.reason, tags: d.tags })),
-        avoid: analysis.avoid.map((d) => ({ name: d.name, reasonShort: d.reason, tags: d.tags })),
+        topPicks,
+        caution: analysis.caution,
+        avoid: analysis.avoid,
         summaryText,
         disclaimerFlag: true,
       };
-    } catch (error) {
-      console.warn('Gemini menu analysis failed, using mock fallback.', error instanceof Error ? error.message : String(error));
-      return this.mockProvider.analyzeMenu(images, user);
+    } catch (err) {
+      if (err instanceof MenuAnalysisValidationError) throw err;
+      if (err instanceof MenuAnalysisInvalidJsonError) throw err;
+      const message = err instanceof Error ? err.message : 'Analysis failed';
+      throw new MenuAnalysisFailedError(message, err);
     }
   }
 }

@@ -58,7 +58,7 @@ export type ShadowLevel = keyof typeof appTheme.shadows;
 export function getShadow(
   level: ShadowLevel,
   colorScheme: 'light' | 'dark' = 'light'
-): typeof shadowTokens.card {
+): { shadowColor: string; shadowOpacity: number; shadowRadius: number; shadowOffset: { width: number; height: number }; elevation: number } {
   const token = shadowTokens[level];
   if (level === 'none' || colorScheme === 'light') return token;
   return {
