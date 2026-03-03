@@ -1,12 +1,13 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { RootStackParamList } from '../app/navigation/types';
 import { ActivityLevel, Sex, UserProfile } from '../domain/models';
 import { USE_MOCK_DATA } from '../config/local';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { mockProfile, mockProfileMeta } from '../mock/profile';
 import { trialRepo, userRepo } from '../services/container';
+import { calculateNutritionTargets } from '../services/calculateNutritionTargets';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { AppIcon } from '../ui/components/AppIcon';
 import { BottomCTA, getCTATotalHeight } from '../ui/components/BottomCTA';
@@ -35,35 +36,16 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
   const pagePaddingX = getPagePaddingX(screenWidth);
   const scrollContentWidth = screenWidth - pagePaddingX * 2;
 
-  // #region agent log
-  const logScrollLayout = (evt: { nativeEvent: { layout: { width: number } } }) => {
-    const w = evt.nativeEvent.layout.width;
-    fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '01b4c8' },
-      body: JSON.stringify({
-        sessionId: '01b4c8',
-        location: 'ProfileScreen.tsx:ScrollView.onLayout',
-        message: 'Profile scroll layout',
-        data: {
-          scrollViewWidth: w,
-          scrollContentWidth,
-          pagePaddingX,
-          cardShadowRadius: shadowTokens.card.shadowRadius,
-          shadowNeedsMargin: shadowTokens.card.shadowRadius,
-          hypothesisId: 'H1',
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-  };
-  // #endregion
   const [trialText, setTrialText] = React.useState('Free');
   const [height, setHeight] = React.useState('');
   const [weight, setWeight] = React.useState('');
   const [age, setAge] = React.useState('');
   const [activity, setActivity] = React.useState<ActivityLevel>('Low');
   const [sex, setSex] = React.useState<Sex>('Male');
+  const [calcStatus, setCalcStatus] = React.useState<'idle' | 'calculating' | 'success' | 'error'>('idle');
+  const [calcError, setCalcError] = React.useState<string | null>(null);
+  const [calcErrorExpanded, setCalcErrorExpanded] = React.useState(false);
+  const [savedUser, setSavedUser] = React.useState<UserProfile | null>(null);
 
   React.useEffect(() => {
     void (async () => {
@@ -91,6 +73,19 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
     })();
   }, []);
 
+  const triggerCalculation = React.useCallback(async (profile: UserProfile): Promise<void> => {
+    setCalcStatus('calculating');
+    setCalcError(null);
+    try {
+      const targets = await calculateNutritionTargets(profile);
+      await userRepo.saveNutritionTargets(targets);
+      setCalcStatus('success');
+    } catch (e) {
+      setCalcError(e instanceof Error ? e.message : 'Calculation failed. Please try again.');
+      setCalcStatus('error');
+    }
+  }, []);
+
   const save = async (): Promise<void> => {
     if (USE_MOCK_DATA) return;
     const current = await userRepo.getUser();
@@ -113,29 +108,49 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
     };
     await userRepo.saveUser(next);
     setUser(next);
+    setSavedUser(next);
+
+    const prev = current.baseParams;
+    const cur = next.baseParams;
+    const paramsChanged =
+      !prev || !cur ||
+      prev.heightCm !== cur.heightCm ||
+      prev.weightKg !== cur.weightKg ||
+      (prev.age ?? 0) !== (cur.age ?? 0) ||
+      prev.activityLevel !== cur.activityLevel ||
+      (prev.sex ?? 'Prefer not to say') !== (cur.sex ?? 'Prefer not to say');
+
+    if (cur && paramsChanged) {
+      void triggerCalculation(next);
+    }
   };
 
   return (
-    <Screen keyboardAvoiding safeTop={false}>
-      <ScreenHeader />
+    <Screen safeTop={false}>
+      <ScreenHeader
+        onBack={() => navigation.goBack()}
+        paddingHorizontal={CARD_SHADOW_MARGIN}
+        style={{ marginBottom: layout.sectionSpacingY }}
+        rightAction={
+          <Pressable style={styles.loginPill} hitSlop={8}>
+            <Text style={styles.loginPillText} maxFontSizeMultiplier={1.2}>Login</Text>
+          </Pressable>
+        }
+      />
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
-        style={[styles.scroll, styles.scrollOverflow]}
+        style={styles.scroll}
         contentContainerStyle={[styles.wrap, { paddingBottom: scrollPaddingBottom, paddingHorizontal: CARD_SHADOW_MARGIN }]}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
-        onLayout={logScrollLayout}
       >
         <View style={styles.shadowBleedWrap}>
-        <Card>
-          <Text style={styles.sectionLabel}>ACCOUNT</Text>
-          <View style={styles.rowBetween}>
-            <Text style={styles.fieldTitle} maxFontSizeMultiplier={1.2}>Status</Text>
-            <View style={styles.guestPill}><Text style={styles.guestText} maxFontSizeMultiplier={1.2}>Guest</Text></View>
-          </View>
-          <View style={styles.rowBetween}>
-            <Text style={styles.fieldTitle} maxFontSizeMultiplier={1.2}>Trial</Text>
-            <Text style={styles.trialText} maxFontSizeMultiplier={1.2}>{trialText}</Text>
-          </View>
+        <Card style={styles.premiumCard}>
+          <AppIcon name="sparkles" />
+          <Text style={styles.premiumTitle} maxFontSizeMultiplier={1.2}>Unlock Premium</Text>
+          <Text style={styles.premiumSubtitle} maxFontSizeMultiplier={1.2}>Get unlimited recipes and advanced AI analysis.</Text>
+          <PrimaryButton title="Upgrade to Premium" onPress={() => navigation.navigate('Paywall')} />
         </Card>
         <Card>
           <Text style={styles.sectionLabel}>DIETARY PROFILE</Text>
@@ -148,6 +163,35 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
             <Text style={styles.chevron}>{'>'}</Text>
           </Pressable>
         </Card>
+        {calcStatus === 'calculating' && (
+          <Card style={styles.calcCard}>
+            <ActivityIndicator size="small" color={appTheme.colors.accent} />
+            <Text style={styles.calcText}>Calculating your daily targets…</Text>
+          </Card>
+        )}
+        {calcStatus === 'success' && (
+          <Card style={styles.calcCard}>
+            <Text style={styles.calcSuccess}>✓ Daily targets updated</Text>
+            <Text style={styles.calcSubtext}>Your calorie and macro goals are ready on the home screen.</Text>
+          </Card>
+        )}
+        {calcStatus === 'error' && (
+          <Card style={styles.calcCard}>
+            <Pressable onPress={() => setCalcErrorExpanded((v) => !v)} style={styles.calcErrorTap}>
+              <Text style={styles.calcErrorText}>{calcError?.split('\n')[0] ?? 'Error'}</Text>
+              <Text style={styles.calcErrorHint}>{calcErrorExpanded ? 'Hide details ▲' : 'Tap for details ▼'}</Text>
+            </Pressable>
+            {calcErrorExpanded && calcError && calcError.includes('\n') && (
+              <Text style={styles.calcErrorDetail} selectable>{calcError.slice(calcError.indexOf('\n') + 1)}</Text>
+            )}
+            <Pressable
+              style={styles.retryBtn}
+              onPress={() => { setCalcErrorExpanded(false); if (savedUser ?? user) void triggerCalculation((savedUser ?? user)!); }}
+            >
+              <Text style={styles.retryBtnText}>Try again</Text>
+            </Pressable>
+          </Card>
+        )}
         <Card>
           <Text style={styles.sectionLabel}>PERSONAL PARAMETERS</Text>
           <View style={styles.paramsContent}>
@@ -176,11 +220,16 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
             </View>
           </View>
         </Card>
-        <Card style={styles.premiumCard}>
-          <AppIcon name="sparkles" />
-          <Text style={styles.premiumTitle} maxFontSizeMultiplier={1.2}>Unlock Premium</Text>
-          <Text style={styles.premiumSubtitle} maxFontSizeMultiplier={1.2}>Get unlimited recipes and advanced AI analysis.</Text>
-          <PrimaryButton title="Upgrade to Premium" onPress={() => navigation.navigate('Paywall')} />
+        <Card>
+          <Text style={styles.sectionLabel}>ACCOUNT</Text>
+          <View style={styles.rowBetween}>
+            <Text style={styles.fieldTitle} maxFontSizeMultiplier={1.2}>Status</Text>
+            <View style={styles.guestPill}><Text style={styles.guestText} maxFontSizeMultiplier={1.2}>Guest</Text></View>
+          </View>
+          <View style={styles.rowBetween}>
+            <Text style={styles.fieldTitle} maxFontSizeMultiplier={1.2}>Trial</Text>
+            <Text style={styles.trialText} maxFontSizeMultiplier={1.2}>{trialText}</Text>
+          </View>
         </Card>
         <Card style={styles.legalCard}>
           <View style={styles.rowBetween}><Text style={styles.fieldTitle} maxFontSizeMultiplier={1.2}>Terms of Service</Text><Text style={styles.chevron}>{'>'}</Text></View>
@@ -189,6 +238,7 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
         <Text style={styles.disclaimer} maxFontSizeMultiplier={1.2}>Disclaimer: This app is for informational purposes only and does not constitute medical advice.</Text>
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
       <BottomCTA>
         <PrimaryButton title="Save Changes" onPress={() => void save()} />
       </BottomCTA>
@@ -197,9 +247,8 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   scroll: { flex: 1 },
-  /** Allow card shadows to draw outside scroll bounds (iOS). */
-  scrollOverflow: { overflow: 'visible' as const },
   wrap: { flexGrow: 1 },
   /** Negative margin so cards keep same width; shadow has room from wrap paddingHorizontal. iOS grouped-list gap between cards. */
   shadowBleedWrap: { marginHorizontal: -CARD_SHADOW_MARGIN, gap: layout.sectionSpacingY },
@@ -241,4 +290,37 @@ const styles = StyleSheet.create({
   premiumSubtitle: { ...typography.body, color: appTheme.colors.muted, textAlign: 'center', marginBottom: spec.spacing[8] },
   legalCard: { gap: spec.spacing[8] },
   disclaimer: { ...typography.caption, color: appTheme.colors.muted, textAlign: 'center' },
+  calcCard: { flexDirection: 'row', alignItems: 'center', gap: spec.spacing[12], flexWrap: 'wrap' },
+  calcText: { ...typography.body, color: appTheme.colors.muted, flex: 1 },
+  calcSuccess: { ...typography.bodySemibold, color: appTheme.colors.success, flex: 1 },
+  calcSubtext: { ...typography.caption, color: appTheme.colors.muted, width: '100%' },
+  calcErrorTap: { flex: 1 },
+  calcErrorText: { ...typography.body, color: appTheme.colors.danger },
+  calcErrorHint: { ...typography.caption, color: appTheme.colors.muted, marginTop: 4 },
+  calcErrorDetail: { ...typography.caption, color: appTheme.colors.muted, backgroundColor: '#F8F8F8', borderRadius: 8, padding: 8, width: '100%', fontFamily: 'monospace' as const, fontSize: 11 },
+  retryBtn: {
+    paddingHorizontal: spec.spacing[16],
+    paddingVertical: spec.spacing[8],
+    borderRadius: spec.chipRadius,
+    borderWidth: 1,
+    borderColor: appTheme.colors.danger,
+  },
+  retryBtnText: { ...typography.caption, color: appTheme.colors.danger, fontWeight: '700' },
+  loginPill: {
+    minHeight: spec.headerPillHeight,
+    minWidth: spec.minTouchTarget,
+    maxHeight: spec.headerPillHeight,
+    borderRadius: spec.headerPillRadius,
+    paddingHorizontal: spec.headerPillPaddingX,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    backgroundColor: appTheme.colors.surface,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+  },
+  loginPillText: {
+    fontSize: spec.headerPillFontSize,
+    fontWeight: '600' as const,
+    color: '#15803D',
+  },
 });

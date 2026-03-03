@@ -29,11 +29,19 @@ function hasRealAllergies(selectedAllergies: Allergy[]): boolean {
   return selectedAllergies.some((a) => trimStr(a).toLowerCase() !== 'none');
 }
 
+function parseOptionalInt(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number' && Number.isFinite(v)) return Math.round(v);
+  return null;
+}
+
 function validateDishPick(
   raw: unknown,
   index: number,
-  group: string,
-  pinWhitelist: string[],
+  group: 'topPicks' | 'caution' | 'avoid',
+  pinWhitelistTop: string[],
+  pinWhitelistCaution: string[],
+  pinWhitelistAvoid: string[],
   selectedDietPreferences: DietaryPreference[],
   hasAllergies: boolean,
   dislikes: string[],
@@ -70,26 +78,34 @@ function validateDishPick(
     }
   }
 
-  // pins: array length 2–4 (AI often returns 2 for caution/avoid), unique, all in whitelist
+  // top pins are only for topPicks; caution/avoid must use riskPins.
   const pinsRaw = o.pins;
   let pins: string[] = [];
-  if (!Array.isArray(pinsRaw)) {
-    addIssue(issues, `${basePath}.pins`, 'pins_not_array', 'pins must be an array');
-  } else {
-    pins = pinsRaw.map((p) => (typeof p === 'string' ? p.trim() : '')).filter(Boolean);
-    if (pins.length < 2 || pins.length > 4) {
-      addIssue(issues, `${basePath}.pins`, 'pins_length', 'pins must have 2 to 4 items');
-    }
-    const pinSet = new Set(pins);
-    if (pinSet.size !== pins.length) {
-      addIssue(issues, `${basePath}.pins`, 'pins_unique', 'pins must be unique');
-    }
-    for (const p of pins) {
-      if (!pinWhitelist.includes(p)) {
-        addIssue(issues, `${basePath}.pins`, 'pin_not_in_whitelist', `pin "${p}" is not in the whitelist for this goal`);
-        break;
+  if (group === 'topPicks') {
+    if (!Array.isArray(pinsRaw)) {
+      addIssue(issues, `${basePath}.pins`, 'pins_not_array', 'pins must be an array for topPicks');
+    } else {
+      pins = pinsRaw.map((p) => (typeof p === 'string' ? p.trim() : ''));
+      const hasEmptyPin = pins.some((p) => p === '');
+      if (hasEmptyPin) {
+        addIssue(issues, `${basePath}.pins`, 'pin_empty_or_invalid', 'Every pin must be a non-empty string');
+      }
+      if (pins.length < 3 || pins.length > 4) {
+        addIssue(issues, `${basePath}.pins`, 'pins_length', 'topPicks pins must have exactly 3 or 4 items');
+      }
+      const pinSet = new Set(pins);
+      if (pinSet.size !== pins.length) {
+        addIssue(issues, `${basePath}.pins`, 'pins_unique', 'pins must be unique');
+      }
+      for (const p of pins) {
+        if (!pinWhitelistTop.includes(p)) {
+          addIssue(issues, `${basePath}.pins`, 'pin_not_in_whitelist', `pin "${p}" is not in the top picks whitelist for this goal`);
+          break;
+        }
       }
     }
+  } else if (pinsRaw !== undefined && pinsRaw !== null && Array.isArray(pinsRaw) && pinsRaw.length > 0) {
+    addIssue(issues, `${basePath}.pins`, 'pins_not_allowed', 'caution/avoid items must use riskPins, not pins');
   }
 
   // confidencePercent: number, finite, 0..100
@@ -104,21 +120,17 @@ function validateDishPick(
   }
 
   // dietBadges: array, subset of selectedDietPreferences only, must not include "None"
+  // Invalid badges are silently filtered out (AI often adds relevant but unselected labels).
   const dietBadgesRaw = o.dietBadges;
   let dietBadges: string[] = [];
   if (!Array.isArray(dietBadgesRaw)) {
-    addIssue(issues, `${basePath}.dietBadges`, 'dietBadges_not_array', 'dietBadges must be an array');
+    dietBadges = [];
   } else {
-    dietBadges = dietBadgesRaw.map((b) => (typeof b === 'string' ? b.trim() : '')).filter(Boolean);
-    if (dietBadges.some((b) => b === 'None' || b.toLowerCase() === 'none')) {
-      addIssue(issues, `${basePath}.dietBadges`, 'dietBadges_no_none', 'dietBadges must not include "None"');
-    }
-    for (const b of dietBadges) {
-      if (!selectedDietPreferences.includes(b as DietaryPreference)) {
-        addIssue(issues, `${basePath}.dietBadges`, 'dietBadge_not_selected', `dietBadge "${b}" must be one of user's selected preferences`);
-        break;
-      }
-    }
+    dietBadges = dietBadgesRaw
+      .map((b) => (typeof b === 'string' ? b.trim() : ''))
+      .filter(Boolean)
+      .filter((b) => b.toLowerCase() !== 'none')
+      .filter((b) => selectedDietPreferences.includes(b as DietaryPreference));
   }
 
   // allergenNote
@@ -158,6 +170,81 @@ function validateDishPick(
     }
   }
 
+  // riskPins + quickFix are section-specific
+  const riskPinsRaw = o.riskPins;
+  let riskPins: string[] | undefined;
+  const quickFixRaw = o.quickFix;
+  let quickFix: string | null | undefined = undefined;
+
+  if (group === 'topPicks') {
+    if (Array.isArray(riskPinsRaw) && riskPinsRaw.length > 0) {
+      addIssue(issues, `${basePath}.riskPins`, 'riskPins_not_allowed', 'topPicks must not include riskPins');
+    }
+    if (quickFixRaw !== undefined && quickFixRaw !== null && quickFixRaw !== '') {
+      addIssue(issues, `${basePath}.quickFix`, 'quickFix_not_allowed', 'topPicks must not include quickFix');
+    }
+  }
+
+  if (group === 'caution' || group === 'avoid') {
+    if (!Array.isArray(riskPinsRaw)) {
+      addIssue(issues, `${basePath}.riskPins`, 'riskPins_not_array', 'riskPins must be an array');
+    } else {
+      riskPins = riskPinsRaw.map((p) => (typeof p === 'string' ? p.trim() : ''));
+      const hasEmptyRiskPin = riskPins.some((p) => p === '');
+      if (hasEmptyRiskPin) {
+        addIssue(issues, `${basePath}.riskPins`, 'riskPin_empty_or_invalid', 'Every riskPin must be a non-empty string');
+      }
+      if (riskPins.length < 1 || riskPins.length > 3) {
+        addIssue(issues, `${basePath}.riskPins`, 'riskPins_length', 'riskPins must contain 1 to 3 items');
+      }
+      const riskSet = new Set(riskPins);
+      if (riskSet.size !== riskPins.length) {
+        addIssue(issues, `${basePath}.riskPins`, 'riskPins_unique', 'riskPins must be unique');
+      }
+      const whitelist = group === 'caution' ? pinWhitelistCaution : pinWhitelistAvoid;
+      for (const p of riskPins) {
+        if (!whitelist.includes(p)) {
+          addIssue(
+            issues,
+            `${basePath}.riskPins`,
+            'riskPin_not_in_whitelist',
+            `risk pin "${p}" is not in the ${group} whitelist for this goal`
+          );
+          break;
+        }
+      }
+    }
+  }
+
+  if (group === 'caution') {
+    if (typeof quickFixRaw !== 'string' || quickFixRaw.trim() === '') {
+      addIssue(issues, `${basePath}.quickFix`, 'quickFix_required', 'quickFix is required for caution items');
+    } else {
+      quickFix = quickFixRaw.trim();
+      if (!quickFix.startsWith('Try: ')) {
+        addIssue(issues, `${basePath}.quickFix`, 'quickFix_prefix', 'quickFix must start with "Try: "');
+      }
+      if (quickFix.length > 45) {
+        addIssue(issues, `${basePath}.quickFix`, 'quickFix_length', 'quickFix must be 45 characters or less');
+      }
+      if (/\n/.test(quickFix)) {
+        addIssue(issues, `${basePath}.quickFix`, 'quickFix_no_newline', 'quickFix must not contain newlines');
+      }
+    }
+  }
+
+  if (group === 'avoid') {
+    if (quickFixRaw !== undefined && quickFixRaw !== null && quickFixRaw !== '') {
+      addIssue(issues, `${basePath}.quickFix`, 'quickFix_not_allowed', 'quickFix is only allowed for caution items');
+    }
+  }
+
+  // estimated macros (optional, nullable) — soft parse, never fails validation
+  const estimatedCalories = parseOptionalInt(o.estimatedCalories);
+  const estimatedProteinG = parseOptionalInt(o.estimatedProteinG);
+  const estimatedCarbsG = parseOptionalInt(o.estimatedCarbsG);
+  const estimatedFatG = parseOptionalInt(o.estimatedFatG);
+
   if (issues.some((i) => i.path.startsWith(basePath))) {
     return null;
   }
@@ -166,22 +253,38 @@ function validateDishPick(
     name,
     shortReason,
     pins,
+    riskPins,
+    quickFix,
     confidencePercent,
     dietBadges,
     allergenNote,
     noLine,
+    estimatedCalories,
+    estimatedProteinG,
+    estimatedCarbsG,
+    estimatedFatG,
   };
 }
 
 export function validateMenuAnalysisResponse(params: {
   response: unknown;
   goal: Goal;
-  pinWhitelist: string[];
+  pinWhitelistTop: string[];
+  pinWhitelistCaution: string[];
+  pinWhitelistAvoid: string[];
   selectedDietPreferences: DietaryPreference[];
   selectedAllergies: Allergy[];
   dislikes: string[];
 }): MenuAnalysisResponse {
-  const { response, pinWhitelist, selectedDietPreferences, selectedAllergies, dislikes } = params;
+  const {
+    response,
+    pinWhitelistTop,
+    pinWhitelistCaution,
+    pinWhitelistAvoid,
+    selectedDietPreferences,
+    selectedAllergies,
+    dislikes,
+  } = params;
   const issues: ValidationIssue[] = [];
 
   if (response === null || response === undefined || typeof response !== 'object' || Array.isArray(response)) {
@@ -203,7 +306,9 @@ export function validateMenuAnalysisResponse(params: {
       topPicksRaw[i],
       i,
       'topPicks',
-      pinWhitelist,
+      pinWhitelistTop,
+      pinWhitelistCaution,
+      pinWhitelistAvoid,
       selectedDietPreferences,
       hasAllergies,
       dislikesTrimmed,
@@ -218,7 +323,9 @@ export function validateMenuAnalysisResponse(params: {
       cautionRaw[i],
       i,
       'caution',
-      pinWhitelist,
+      pinWhitelistTop,
+      pinWhitelistCaution,
+      pinWhitelistAvoid,
       selectedDietPreferences,
       hasAllergies,
       dislikesTrimmed,
@@ -233,7 +340,9 @@ export function validateMenuAnalysisResponse(params: {
       avoidRaw[i],
       i,
       'avoid',
-      pinWhitelist,
+      pinWhitelistTop,
+      pinWhitelistCaution,
+      pinWhitelistAvoid,
       selectedDietPreferences,
       hasAllergies,
       dislikesTrimmed,

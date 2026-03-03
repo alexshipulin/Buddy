@@ -46,10 +46,19 @@ export type DishPick = {
   name: string;
   shortReason: string;
   pins: string[];
+  /** Section-specific negative/risk pins used in caution/avoid cards (1..3). */
+  riskPins?: string[];
+  /** Quick actionable fix for caution items only; must start with "Try: ". */
+  quickFix?: string | null;
   confidencePercent: number;
   dietBadges: string[];
   allergenNote: string | null;
   noLine: string | null;
+  /** AI-estimated macros per dish (approximate). */
+  estimatedCalories?: number | null;
+  estimatedProteinG?: number | null;
+  estimatedCarbsG?: number | null;
+  estimatedFatG?: number | null;
 };
 
 export type MenuScanResult = {
@@ -90,3 +99,15 @@ export type TrialState = {
   scansUsedTodayDate?: string;
 };
 export type ChatMessage = { id: string; role: 'system' | 'user' | 'assistant'; text: string; createdAt: string; sourceKey?: string };
+
+/** AI-computed daily nutrition targets for the user. Recalculated whenever baseParams change. */
+export type NutritionTargets = {
+  caloriesKcal: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  bmrKcal: number;
+  tdeeKcal: number;
+  assumptions: { ageUsed: number; activityMult: number };
+  computedAt: string;
+};

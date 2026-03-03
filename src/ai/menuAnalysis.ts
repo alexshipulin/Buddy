@@ -68,7 +68,14 @@ export class MenuAnalysisInvalidJsonError extends Error {
 // ── JSON Schema for Gemini responseSchema ─────────────────────────────────────
 
 // Gemini API does not support "additionalProperties" in responseSchema — omit it to avoid 400.
-const DISH_PICK_SCHEMA = {
+const MACRO_FIELDS = {
+  estimatedCalories: { type: 'number', nullable: true },
+  estimatedProteinG: { type: 'number', nullable: true },
+  estimatedCarbsG: { type: 'number', nullable: true },
+  estimatedFatG: { type: 'number', nullable: true },
+};
+
+const TOP_DISH_PICK_SCHEMA = {
   type: 'object',
   properties: {
     name: { type: 'string' },
@@ -78,16 +85,48 @@ const DISH_PICK_SCHEMA = {
     dietBadges: { type: 'array', items: { type: 'string' } },
     allergenNote: { type: 'string', nullable: true },
     noLine: { type: 'string', nullable: true },
+    ...MACRO_FIELDS,
   },
   required: ['name', 'shortReason', 'pins', 'confidencePercent', 'dietBadges', 'allergenNote', 'noLine'],
+};
+
+const CAUTION_DISH_PICK_SCHEMA = {
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+    shortReason: { type: 'string' },
+    riskPins: { type: 'array', items: { type: 'string' } },
+    quickFix: { type: 'string' },
+    confidencePercent: { type: 'number' },
+    dietBadges: { type: 'array', items: { type: 'string' } },
+    allergenNote: { type: 'string', nullable: true },
+    noLine: { type: 'string', nullable: true },
+    ...MACRO_FIELDS,
+  },
+  required: ['name', 'shortReason', 'riskPins', 'quickFix', 'confidencePercent', 'dietBadges', 'allergenNote', 'noLine'],
+};
+
+const AVOID_DISH_PICK_SCHEMA = {
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+    shortReason: { type: 'string' },
+    riskPins: { type: 'array', items: { type: 'string' } },
+    confidencePercent: { type: 'number' },
+    dietBadges: { type: 'array', items: { type: 'string' } },
+    allergenNote: { type: 'string', nullable: true },
+    noLine: { type: 'string', nullable: true },
+    ...MACRO_FIELDS,
+  },
+  required: ['name', 'shortReason', 'riskPins', 'confidencePercent', 'dietBadges', 'allergenNote', 'noLine'],
 };
 
 const MENU_RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
-    topPicks: { type: 'array', items: DISH_PICK_SCHEMA },
-    caution: { type: 'array', items: DISH_PICK_SCHEMA },
-    avoid: { type: 'array', items: DISH_PICK_SCHEMA },
+    topPicks: { type: 'array', items: TOP_DISH_PICK_SCHEMA },
+    caution: { type: 'array', items: CAUTION_DISH_PICK_SCHEMA },
+    avoid: { type: 'array', items: AVOID_DISH_PICK_SCHEMA },
   },
   required: ['topPicks', 'caution', 'avoid'],
 };
@@ -137,7 +176,11 @@ export async function analyzeMenuWithGemini(params: {
   dietPrefs: string[];
   allergies: string[];
   dislikes?: string[];
-  pinWhitelist: string[];
+  pinWhitelistTop: string[];
+  pinWhitelistCaution: string[];
+  pinWhitelistAvoid: string[];
+  /** Computed diet-mismatch pin (e.g. "Not Keto"). Null when user has no dietary prefs. */
+  dietMismatchPin?: string | null;
 }): Promise<MenuAnalysisResponse> {
   const key = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
   if (!key) throw new Error('Missing EXPO_PUBLIC_GEMINI_API_KEY');
@@ -145,7 +188,26 @@ export async function analyzeMenuWithGemini(params: {
   const dislikesLine = params.dislikes?.length
     ? `Dislikes (avoid recommending; if a top dish contains one, set noLine e.g. "No tomato"): ${params.dislikes.join(', ')}`
     : '';
-  const pinList = params.pinWhitelist.join(', ');
+  const topPinList = params.pinWhitelistTop.join(', ');
+  const cautionPinList = params.pinWhitelistCaution.join(', ');
+  const avoidPinList = params.pinWhitelistAvoid.join(', ');
+  const quickFixList = [
+    'Try: sauce on the side',
+    'Try: no sauce',
+    'Try: grilled not fried',
+    'Try: swap fries for salad',
+    'Try: half portion',
+    'Try: extra veggies',
+    'Try: less oil',
+    'Try: no cheese',
+    'Try: no mayo',
+    'Try: skip dessert',
+  ].join(', ');
+
+  const { dietMismatchPin } = params;
+  const dietMismatchLine = dietMismatchPin
+    ? `- If dish conflicts with selected diet preferences, include risk pin "${dietMismatchPin}" in caution/avoid.`
+    : '';
 
   const prompt = `Return ONLY JSON. No markdown. No extra text.
 
@@ -154,16 +216,26 @@ Diet preferences (use only these for dietBadges): ${params.dietPrefs.join(', ') 
 Allergies: ${params.allergies.join(', ') || 'none'}
 ${dislikesLine}
 
-Pin whitelist (choose ONLY from this list; 3-4 unique pins per dish): ${pinList}
+Top picks positive pins whitelist (choose ONLY from this list; 3-4 unique pins): ${topPinList}
+Caution risk pins whitelist (choose ONLY from this list; 1-3 unique pins): ${cautionPinList}
+Avoid risk pins whitelist (choose ONLY from this list; 1-3 unique pins): ${avoidPinList}
+Allowed quickFix values for caution: ${quickFixList}
 
 Task:
 - Analyze ALL provided menu images together as one menu.
 - Output language: English for all fields EXCEPT dish name. Dish name must be copied EXACTLY as written on the menu (do not translate).
 - Return 3 groups: topPicks (max 3), caution, avoid.
-- Each dish: name, shortReason (one short sentence, EN), pins (3-4 unique from whitelist), confidencePercent (0-100), dietBadges (subset of user diet preferences only), allergenNote, noLine.
+- topPicks item fields: name, shortReason (one short sentence, EN), pins (3-4 unique from top whitelist), confidencePercent (0-100), dietBadges (subset of user diet preferences only), allergenNote, noLine.
+- caution item fields: name, shortReason, confidencePercent, riskPins (1-3 unique from caution whitelist), quickFix (one allowed quickFix value), dietBadges, allergenNote, noLine.
+- avoid item fields: name, shortReason, confidencePercent, riskPins (1-3 unique from avoid whitelist), dietBadges, allergenNote, noLine.
+- For caution/avoid do NOT use positive pins in pins; use riskPins only.
 - allergenNote: if user has allergies selected, must be either "Allergen safe" or "May contain allergens - ask the waiter". If user has no allergies: null.
 - noLine: only from dislikes; if dish contains a disliked ingredient, set e.g. "No tomato". Otherwise null.
-- If a top pick contains a disliked ingredient it may stay in topPicks but you MUST set noLine.`;
+- If a top pick contains a disliked ingredient it may stay in topPicks but you MUST set noLine.
+- If user has allergies selected and dish is risky or unknown, include risk pin "Allergen" in caution/avoid.
+${dietMismatchLine}
+- If dish conflicts with dislikes, include risk pin "Dislike" in caution/avoid and set noLine when modifiable.
+- For EVERY dish in all 3 groups, estimate macros: estimatedCalories (kcal, integer), estimatedProteinG (grams, integer), estimatedCarbsG (grams, integer), estimatedFatG (grams, integer). Use your best estimate for a standard restaurant portion. If you cannot estimate, set null.`;
 
   const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [
     { text: prompt },
@@ -178,11 +250,11 @@ Task:
       responseMimeType: 'application/json',
       responseSchema: MENU_RESPONSE_SCHEMA,
       temperature: 0.2,
-      maxOutputTokens: 4096,
+      maxOutputTokens: 16384,
     },
   };
 
-  // Try models in chain; fall back on structured-output-unsupported errors only.
+  // Try models in chain; on any failure (network, 5xx, structured-output, etc.) try next model.
   const models = buildModelChain();
   let rawOutput = '';
   let usedModel = models[0];
@@ -197,22 +269,19 @@ Task:
       const callErr = e as GeminiCallError;
       const isLast = i === models.length - 1;
 
-      if (callErr.isStructuredUnsupported && !isLast) {
-        // structured output not supported by this model — try next
-        continue;
+      if (isLast) {
+        // All models exhausted — throw with a clear message for structured-output case
+        if (callErr.isStructuredUnsupported) {
+          throw new MenuAnalysisInvalidJsonError({
+            raw: '',
+            model,
+            status: callErr.status,
+            message: `All models rejected structured output. Last error: ${callErr.message}`,
+          });
+        }
+        throw e;
       }
-
-      if (callErr.isStructuredUnsupported) {
-        // all models exhausted
-        throw new MenuAnalysisInvalidJsonError({
-          raw: '',
-          model,
-          status: callErr.status,
-          message: `All models rejected structured output. Last error: ${callErr.message}`,
-        });
-      }
-
-      throw e; // non-structural error — propagate as-is
+      // Not last model: try next (for any error: network, timeout, 5xx, structured-output, etc.)
     }
   }
 
@@ -241,7 +310,9 @@ Task:
     return validateMenuAnalysisResponse({
       response: parsed,
       goal: params.userGoal,
-      pinWhitelist: params.pinWhitelist,
+      pinWhitelistTop: params.pinWhitelistTop,
+      pinWhitelistCaution: params.pinWhitelistCaution,
+      pinWhitelistAvoid: params.pinWhitelistAvoid,
       selectedDietPreferences: params.dietPrefs as DietaryPreference[],
       selectedAllergies: params.allergies as Allergy[],
       dislikes: params.dislikes ?? [],

@@ -3,7 +3,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import React from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { RootStackParamList } from '../app/navigation/types';
-import { HistoryItem, MacroTotals, UserProfile } from '../domain/models';
+import { HistoryItem, MacroTotals, NutritionTargets, UserProfile } from '../domain/models';
 import { USE_MOCK_DATA } from '../config/local';
 import { mockHomeGreeting, mockRecentItems, mockTodayMacros } from '../mock/home';
 import { historyRepo, userRepo } from '../services/container';
@@ -22,10 +22,42 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 /** Figma/Swift spec: action tile icon is 24×24pt (circle remains 56×56). */
 const ACTION_TILE_ICON_SIZE = 24;
 
+const MACRO_COLORS = {
+  prot: '#FB923C',
+  carb: '#60A5FA',
+  fat: '#FACC15',
+  cal: '#8C2BEE',
+  track: '#F1F5F9',
+} as const;
+
+function ProgressBar({ progress, color, height = 6 }: { progress: number; color: string; height?: number }): React.JSX.Element {
+  const clamped = Math.max(0, Math.min(1, progress));
+  return (
+    <View style={[styles.progressTrack, { height }]}>
+      <View style={[styles.progressFill, { width: `${Math.round(clamped * 100)}%`, backgroundColor: color }]} />
+    </View>
+  );
+}
+
+function MacroColumn({ label, eaten, target, color }: { label: string; eaten: number; target: number | null; color: string }): React.JSX.Element {
+  const progress = target && target > 0 ? eaten / target : 0;
+  return (
+    <View style={styles.macroCol}>
+      <Text style={styles.macroColLabel}>{label}</Text>
+      <Text style={styles.macroColValue} maxFontSizeMultiplier={1.2}>{Math.round(eaten)}g</Text>
+      <ProgressBar progress={progress} color={color} />
+      {target != null ? (
+        <Text style={styles.macroColTarget} maxFontSizeMultiplier={1.1}>of {Math.round(target)}g</Text>
+      ) : null}
+    </View>
+  );
+}
+
 export function HomeScreen({ navigation }: Props): React.JSX.Element {
   const [greeting, setGreeting] = React.useState('Hello');
   const [user, setUser] = React.useState<UserProfile | null>(null);
   const [todayMacros, setTodayMacros] = React.useState<MacroTotals>({ caloriesKcal: 0, proteinG: 0, carbsG: 0, fatG: 0 });
+  const [targets, setTargets] = React.useState<NutritionTargets | null>(null);
   const [recent, setRecent] = React.useState<HistoryItem[]>([]);
 
   const load = React.useCallback(async (): Promise<void> => {
@@ -38,8 +70,10 @@ export function HomeScreen({ navigation }: Props): React.JSX.Element {
     const loadedUser = await userRepo.getUser();
     const loadedMacros = await computeTodayMacrosUseCase(new Date(), { historyRepo });
     const loadedRecent = await historyRepo.listRecent(10);
+    const loadedTargets = await userRepo.getNutritionTargets();
     setUser(loadedUser);
     setTodayMacros(loadedMacros);
+    setTargets(loadedTargets);
     setRecent(loadedRecent);
     const auth = await userRepo.getAuthState();
     setGreeting(auth.displayName ? `Hello, ${auth.displayName}` : 'Hello, Alex');
@@ -67,14 +101,33 @@ export function HomeScreen({ navigation }: Props): React.JSX.Element {
               <Text style={styles.eatenText} maxFontSizeMultiplier={1.2}>Eaten</Text>
             </View>
           </View>
-          <View style={styles.macroRow}>
-            <View style={styles.macroCell}><Text style={styles.macroLabel}>CAL</Text><Text style={styles.macroValue} maxFontSizeMultiplier={1.2}>{Math.round(todayMacros.caloriesKcal)}</Text></View>
-            <View style={styles.macroDivider} />
-            <View style={styles.macroCell}><Text style={styles.macroLabel}>PROT</Text><Text style={styles.macroValue} maxFontSizeMultiplier={1.2}>{Math.round(todayMacros.proteinG)}g</Text></View>
-            <View style={styles.macroDivider} />
-            <View style={styles.macroCell}><Text style={styles.macroLabel}>CARB</Text><Text style={styles.macroValue} maxFontSizeMultiplier={1.2}>{Math.round(todayMacros.carbsG)}g</Text></View>
-            <View style={styles.macroDivider} />
-            <View style={styles.macroCell}><Text style={styles.macroLabel}>FAT</Text><Text style={styles.macroValue} maxFontSizeMultiplier={1.2}>{Math.round(todayMacros.fatG)}g</Text></View>
+          <View style={styles.calSection}>
+            <View style={styles.calHeader}>
+              <View>
+                <Text style={styles.calLabel}>CALORIES</Text>
+                <View style={styles.calValueRow}>
+                  <Text style={styles.calValue} maxFontSizeMultiplier={1.2}>{Math.round(todayMacros.caloriesKcal)}</Text>
+                  {targets ? (
+                    <Text style={styles.calTarget} maxFontSizeMultiplier={1.1}>/ {Math.round(targets.caloriesKcal)} kcal</Text>
+                  ) : null}
+                </View>
+              </View>
+              {targets ? (
+                <Text style={styles.calPercent} maxFontSizeMultiplier={1.2}>
+                  {Math.min(100, Math.round((todayMacros.caloriesKcal / targets.caloriesKcal) * 100))}%
+                </Text>
+              ) : null}
+            </View>
+            <ProgressBar
+              progress={targets ? todayMacros.caloriesKcal / targets.caloriesKcal : 0}
+              color={MACRO_COLORS.cal}
+              height={10}
+            />
+          </View>
+          <View style={styles.macrosRow}>
+            <MacroColumn label="PROT" eaten={todayMacros.proteinG} target={targets?.proteinG ?? null} color={MACRO_COLORS.prot} />
+            <MacroColumn label="CARB" eaten={todayMacros.carbsG} target={targets?.carbsG ?? null} color={MACRO_COLORS.carb} />
+            <MacroColumn label="FAT" eaten={todayMacros.fatG} target={targets?.fatG ?? null} color={MACRO_COLORS.fat} />
           </View>
           {!hasTargets ? (
             <View style={styles.ctaBox}>
@@ -119,23 +172,30 @@ const styles = StyleSheet.create({
   avatarImage: { width: '100%', height: '100%' },
   greeting: { ...typography.largeTitle },
   subtitleHeader: { ...typography.body, color: appTheme.colors.muted, marginTop: spec.spacing[4] },
-  todayCard: { gap: spec.spacing[16] },
+  todayCard: { gap: 24, paddingTop: 24, paddingBottom: 32, paddingHorizontal: 24 },
   todayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   eatenChip: {
-    backgroundColor: appTheme.colors.accentSoft,
-    borderRadius: spec.chipSmallRadius,
-    paddingHorizontal: spec.chipSmallPaddingX,
-    height: spec.chipSmallHeight,
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: 'rgba(140,43,238,0.1)',
+    borderRadius: 9999,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
   },
-  eatenText: { color: appTheme.colors.accent, ...appTheme.typography.caption, fontWeight: '700' },
-  cardTitle: { ...typography.h2 },
-  macroRow: { flexDirection: 'row', alignItems: 'stretch', justifyContent: 'space-between' },
-  macroCell: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spec.spacing[8] },
-  macroLabel: { ...typography.overline, color: appTheme.colors.muted },
-  macroValue: { ...typography.h1 },
-  macroDivider: { width: 1, backgroundColor: appTheme.colors.border, marginHorizontal: spec.spacing[4] },
+  eatenText: { color: '#8C2BEE', fontSize: 12, fontWeight: '600' },
+  cardTitle: { fontSize: 20, fontWeight: '700', color: '#0F172A', lineHeight: 28 },
+  calSection: { gap: 8, paddingBottom: 8 },
+  calHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+  calLabel: { fontSize: 12, fontWeight: '600', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: 0.6, lineHeight: 16 },
+  calValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+  calValue: { fontSize: 24, fontWeight: '800', color: '#0F172A', lineHeight: 32 },
+  calTarget: { fontSize: 14, fontWeight: '500', color: '#94A3B8', lineHeight: 20 },
+  calPercent: { fontSize: 12, fontWeight: '700', color: '#8C2BEE', lineHeight: 16 },
+  progressTrack: { backgroundColor: '#F1F5F9', borderRadius: 9999, overflow: 'hidden' as const, width: '100%' as const },
+  progressFill: { height: '100%' as const, borderRadius: 9999 },
+  macrosRow: { flexDirection: 'row', gap: 16, borderTopWidth: 1, borderTopColor: '#F8FAFC', paddingTop: 9 },
+  macroCol: { flex: 1, gap: 8 },
+  macroColLabel: { fontSize: 10, fontWeight: '700', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: -0.25, lineHeight: 15 },
+  macroColValue: { fontSize: 16, fontWeight: '700', color: '#0F172A', lineHeight: 24 },
+  macroColTarget: { fontSize: 9, fontWeight: '500', color: '#94A3B8', lineHeight: 13.5 },
   ctaBox: { backgroundColor: appTheme.colors.infoSoft, borderRadius: spec.inputRadius, padding: spec.spacing[12], gap: spec.spacing[12] },
   ctaText: { ...typography.caption, color: appTheme.colors.muted, textAlign: 'center' },
   actionGrid: { flexDirection: 'row', gap: spec.spacing[16] },

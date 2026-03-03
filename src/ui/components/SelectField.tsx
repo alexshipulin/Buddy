@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
 import { appTheme } from '../../design/theme';
 import { spec } from '../../design/spec';
 
@@ -17,6 +17,7 @@ export function SelectField<T extends string>({ label, value, options, onChange 
   const active = options[currentIdx]?.label ?? value;
 
   const cycle = (): void => {
+    Keyboard.dismiss();
     if (!options.length) return;
     const nextIdx = currentIdx < 0 ? 0 : (currentIdx + 1) % options.length;
     onChange(options[nextIdx].value);

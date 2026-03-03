@@ -56,11 +56,6 @@ export function Screen({
   const { width } = useWindowDimensions();
   const pagePaddingX = getPagePaddingX(width);
   const topPadding = safeTop ? insets.top + layout.topContentOffset : 0;
-  // #region agent log
-  React.useEffect(() => {
-    fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',location:'Screen.tsx:render',message:'screen padding computed',hypothesisId:'B',data:{safeTop,padded,topPadding,insetsTop:insets.top,topContentOffset:layout.topContentOffset,hasBottomCTA},timestamp:Date.now()})}).catch(()=>{});
-  }, [safeTop, padded, topPadding, insets.top, hasBottomCTA]);
-  // #endregion
   const reservedBottomForCTA = hasBottomCTA ? insets.bottom + spec.primaryButtonHeight + layout.itemSpacingY + layout.bottomContentOffset : 0;
   const safeBottomPadding = safeBottom ? insets.bottom + layout.bottomContentOffset : 0;
   const basePaddingBottom = bottomCTAPadding > 0 ? bottomCTAPadding : Math.max(safeBottomPadding, reservedBottomForCTA);

@@ -1,6 +1,6 @@
 import { DishPick, MenuScanResult, UserProfile } from '../../domain/models';
 import { analyzeMenuWithGemini, MenuAnalysisInvalidJsonError } from '../../ai/menuAnalysis';
-import { getPinWhitelist } from '../../domain/menuPins';
+import { getAvoidPinWhitelist, getCautionPinWhitelist, getDietMismatchPin, getPinWhitelist } from '../../domain/menuPins';
 import { uriToBase64 } from '../../services/aiService';
 import { createId } from '../../utils/id';
 import { MenuAnalysisValidationError } from '../../validation/menuAnalysisValidator';
@@ -35,7 +35,19 @@ export class GeminiMenuAnalysisProvider implements MenuAnalysisProvider {
       imagePayloads.push({ base64, mimeType: detectMimeType(uri) });
     }
 
-    const pinWhitelist = getPinWhitelist(user.goal);
+    const pinWhitelistTop = getPinWhitelist(user.goal);
+    const pinWhitelistCaution = getCautionPinWhitelist(user.goal);
+    const pinWhitelistAvoid = getAvoidPinWhitelist(user.goal);
+
+    // Inject a specific diet-mismatch pin (e.g. "Not Keto") into risk whitelists
+    // when the user has at least one dietary preference selected.
+    const dietMismatchPin = getDietMismatchPin(user.dietaryPreferences ?? []);
+    const effectiveCautionWhitelist = dietMismatchPin
+      ? [...pinWhitelistCaution, dietMismatchPin]
+      : pinWhitelistCaution;
+    const effectiveAvoidWhitelist = dietMismatchPin
+      ? [...pinWhitelistAvoid, dietMismatchPin]
+      : pinWhitelistAvoid;
 
     try {
       const analysis = await analyzeMenuWithGemini({
@@ -44,7 +56,10 @@ export class GeminiMenuAnalysisProvider implements MenuAnalysisProvider {
         dietPrefs: user.dietaryPreferences ?? [],
         allergies: user.allergies ?? [],
         dislikes: user.dislikes,
-        pinWhitelist,
+        pinWhitelistTop,
+        pinWhitelistCaution: effectiveCautionWhitelist,
+        pinWhitelistAvoid: effectiveAvoidWhitelist,
+        dietMismatchPin,
       });
 
       const topPicks: DishPick[] = analysis.topPicks.slice(0, 3);

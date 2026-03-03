@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
-import { Alert, Clipboard, Image, ImageStyle, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Animated, Clipboard, Easing, Image, ImageStyle, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
@@ -24,6 +24,191 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ScanMenu'>;
 
 // Show detailed AI debug panel in dev builds or when explicitly enabled via env.
 const SHOW_AI_DEBUG = __DEV__ || process.env.EXPO_PUBLIC_SHOW_AI_DEBUG === 'true';
+
+const ANALYZING_MESSAGES = [
+  'Finding dishes that match your goal',
+  'Scanning nutritional content',
+  'Tailoring results to your tastes',
+  'Almost ready…',
+];
+
+function AnalyzingOverlay({ onCancel }: { onCancel: () => void }): React.JSX.Element {
+  const insets = useSafeAreaInsets();
+  const orbScale = React.useRef(new Animated.Value(1)).current;
+  const textOpacity = React.useRef(new Animated.Value(1)).current;
+  const [msgIndex, setMsgIndex] = React.useState(0);
+
+  React.useEffect(() => {
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(orbScale, { toValue: 1.12, duration: 1500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(orbScale, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    pulse.start();
+    return () => pulse.stop();
+  }, [orbScale]);
+
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      Animated.timing(textOpacity, { toValue: 0, duration: 400, useNativeDriver: true }).start(() => {
+        setMsgIndex((i) => (i + 1) % ANALYZING_MESSAGES.length);
+        Animated.timing(textOpacity, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+      });
+    }, 3600);
+    return () => clearInterval(interval);
+  }, [textOpacity]);
+
+  return (
+    // Modal renders in a native window above everything — covers status bar and home indicator
+    <Modal visible animationType="fade" transparent={false} statusBarTranslucent onRequestClose={onCancel}>
+      <View style={[loadStyles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        {/* Close — iOS HIG: 44pt touch target at 16pt leading, 8pt from top of safe area */}
+        <View style={loadStyles.header}>
+          <Pressable style={loadStyles.cancelBtn} hitSlop={8} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Cancel">
+            <View style={loadStyles.cancelCircle}>
+              <Text style={loadStyles.cancelIcon}>✕</Text>
+            </View>
+          </Pressable>
+        </View>
+
+        {/* Centered orb + text */}
+        <View style={loadStyles.center}>
+          <View style={loadStyles.orbContainer}>
+            <View style={loadStyles.orbGlow} />
+            <Animated.View style={[loadStyles.orb, { transform: [{ scale: orbScale }] }]}>
+              <View style={loadStyles.orbHighlight} />
+            </Animated.View>
+          </View>
+
+          <View style={loadStyles.textBlock}>
+            <Text style={loadStyles.title}>Analyzing…</Text>
+            <Animated.Text style={[loadStyles.subtitle, { opacity: textOpacity }]}>
+              {ANALYZING_MESSAGES[msgIndex]}
+            </Animated.Text>
+          </View>
+        </View>
+
+        {/* Footer */}
+        <View style={loadStyles.footer}>
+          <Text style={loadStyles.brand}>BUDDY AI</Text>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const ORB_SIZE = 120;
+const GLOW_SIZE = ORB_SIZE * 1.9;
+
+const loadStyles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  header: {
+    height: 44,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  cancelBtn: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelIcon: {
+    fontSize: 14,
+    lineHeight: 14,
+    color: '#64748B',
+    fontWeight: '400',
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 60,
+  },
+  orbContainer: {
+    width: GLOW_SIZE,
+    height: GLOW_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 40,
+  },
+  orbGlow: {
+    position: 'absolute',
+    width: GLOW_SIZE,
+    height: GLOW_SIZE,
+    borderRadius: GLOW_SIZE / 2,
+    backgroundColor: '#EDE9FE',
+    opacity: 0.6,
+  },
+  orb: {
+    width: ORB_SIZE,
+    height: ORB_SIZE,
+    borderRadius: ORB_SIZE / 2,
+    backgroundColor: '#8B5CF6',
+    shadowColor: '#8B5CF6',
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 12,
+    overflow: 'hidden',
+  },
+  orbHighlight: {
+    position: 'absolute',
+    top: 10,
+    left: 18,
+    width: 44,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#FFFFFF',
+    opacity: 0.2,
+    transform: [{ rotate: '-12deg' }],
+  },
+  textBlock: {
+    alignItems: 'center',
+    gap: 10,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: '600',
+    letterSpacing: -0.3,
+    color: '#1E293B',
+  },
+  subtitle: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#94A3B8',
+    height: 22,
+    textAlign: 'center',
+  },
+  footer: {
+    alignItems: 'center',
+    paddingBottom: 24,
+    opacity: 0.3,
+  },
+  brand: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 2.5,
+    color: '#94A3B8',
+  },
+});
 
 export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
   const cameraRef = React.useRef<CameraView | null>(null);
@@ -176,12 +361,7 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
       </View>
 
       {loading ? (
-        <View style={styles.overlay}>
-          <Card style={styles.overlayCard}>
-            <Text style={styles.overlayTitle}>Analyzing...</Text>
-            <Text style={styles.overlayText}>This may take a few seconds.</Text>
-          </Card>
-        </View>
+        <AnalyzingOverlay onCancel={() => navigation.goBack()} />
       ) : null}
 
       {errorMessage ? (
@@ -334,13 +514,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  overlayCard: { width: '82%', alignItems: 'center', gap: appTheme.spacing.xs },
-  overlayTitle: {
-    color: appTheme.colors.textPrimary,
-    fontWeight: '700',
-    fontSize: appTheme.typography.body.fontSize,
-  },
-  overlayText: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.small.fontSize },
   errorCard: { width: '88%', alignItems: 'center', gap: appTheme.spacing.md },
   errorTitle: {
     color: appTheme.colors.textPrimary,

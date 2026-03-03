@@ -32,9 +32,6 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
   React.useEffect(() => {
     void (async () => {
       const user = await userRepo.getUser();
-      // #region agent log
-      fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',location:'DietaryProfileScreen.tsx:useEffect',message:'user loaded',hypothesisId:'D',data:{hasUser:!!user,goal:user?.goal,prefsCount:user?.dietaryPreferences?.length??0,allergiesCount:user?.allergies?.length??0,dislikesCount:user?.dislikes?.length??0,dislikes:user?.dislikes??[]},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       if (user) {
         if (user.dietaryPreferences?.length) setSelectedPreferences(user.dietaryPreferences);
         if (user.allergies?.length) {
@@ -63,9 +60,6 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
   const onSave = async (): Promise<void> => {
     const user = await userRepo.getUser();
     if (!user) return navigation.replace('GoalSelection');
-    // #region agent log
-    fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',location:'DietaryProfileScreen.tsx:onSave',message:'saving profile',hypothesisId:'D',data:{goal:user.goal,prefs:selectedPreferences,allergies:selectedAllergies,dislikes,dislikesCount:dislikes.length},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     await userRepo.saveUser({
       ...user,
       dietaryPreferences: selectedPreferences,

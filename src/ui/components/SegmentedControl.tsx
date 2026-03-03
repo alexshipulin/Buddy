@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
 import { uiTheme } from '../theme';
 
 type Props<T extends string> = {
@@ -14,7 +14,7 @@ export function SegmentedControl<T extends string>({ value, options, onChange }:
       {options.map((option) => {
         const active = option === value;
         return (
-          <Pressable key={option} style={[styles.item, active ? styles.itemActive : null]} onPress={() => onChange(option)}>
+          <Pressable key={option} style={[styles.item, active ? styles.itemActive : null]} onPress={() => { Keyboard.dismiss(); onChange(option); }}>
             <Text style={[styles.itemText, active ? styles.itemTextActive : null]}>{option}</Text>
           </Pressable>
         );

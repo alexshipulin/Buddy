@@ -47,14 +47,14 @@ function createMockMenuResult(): MenuScanResult {
     createdAt: new Date().toISOString(),
     inputImages: [],
     topPicks: [
-      { name: 'Grilled salmon with greens', shortReason: 'High protein and healthy fats.', pins: ['High protein', 'Omega-3', 'Lean protein'], confidencePercent: 88, dietBadges: [], allergenNote: null, noLine: null },
-      { name: 'Chicken salad', shortReason: 'Lean protein with fiber-rich vegetables.', pins: ['High protein', 'Lower calorie', 'High fiber'], confidencePercent: 85, dietBadges: [], allergenNote: null, noLine: null },
+      { name: 'Grilled salmon with greens', shortReason: 'High protein and healthy fats.', pins: ['High protein', 'Lean protein', 'Healthy fats'], confidencePercent: 88, dietBadges: [], allergenNote: null, noLine: null },
+      { name: 'Chicken salad', shortReason: 'Lean protein with fiber-rich vegetables.', pins: ['High protein', 'Low calorie', 'High fiber'], confidencePercent: 85, dietBadges: [], allergenNote: null, noLine: null },
     ],
     caution: [
-      { name: 'Teriyaki chicken', shortReason: 'Protein is good, but sauce can add sugar.', pins: ['Lower sugar', 'Lower sodium', 'Moderate protein'], confidencePercent: 65, dietBadges: [], allergenNote: null, noLine: null },
+      { name: 'Teriyaki chicken', shortReason: 'Protein is good, but sauce can add sugar.', pins: [], riskPins: ['High Sugar', 'High Sodium'], quickFix: 'Try: sauce on the side', confidencePercent: 65, dietBadges: [], allergenNote: null, noLine: null },
     ],
     avoid: [
-      { name: 'Deep-fried combo platter', shortReason: 'Very high energy density.', pins: ['Lower calorie', 'Portion control', 'No fried'], confidencePercent: 90, dietBadges: [], allergenNote: null, noLine: null },
+      { name: 'Deep-fried combo platter', shortReason: 'Very high energy density.', pins: [], riskPins: ['Deep-fried', 'High calories'], confidencePercent: 90, dietBadges: [], allergenNote: null, noLine: null },
     ],
     summaryText: 'Buddy analyzed your menu. Add your API key for AI-powered recommendations.',
     disclaimerFlag: true,

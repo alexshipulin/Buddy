@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { layout } from '../design/layout';
 import { appTheme } from '../design/theme';
@@ -15,48 +15,48 @@ type Props = {
   rightLabel?: string;
   onRightPress?: () => void;
   rightAction?: React.ReactNode;
+  /** Override horizontal padding to align with content below. */
+  paddingHorizontal?: number;
+  /** Extra style on the container row. */
+  style?: ViewStyle;
 };
 
-export function ScreenHeader({ title, leftLabel, onBack, rightLabel, onRightPress, rightAction }: Props): React.JSX.Element {
+export function ScreenHeader({ title, leftLabel, onBack, rightLabel, onRightPress, rightAction, paddingHorizontal, style }: Props): React.JSX.Element {
   const insets = useSafeAreaInsets();
+
+  const leftElement = onBack != null ? (
+    <Pressable onPress={onBack} style={styles.pill} hitSlop={8}>
+      <Text style={styles.pillText}>‹</Text>
+    </Pressable>
+  ) : leftLabel ? (
+    <View style={styles.pill}>
+      <Text style={styles.pillText} numberOfLines={1}>{leftLabel}</Text>
+    </View>
+  ) : (
+    <View style={styles.placeholder} />
+  );
+
+  const rightElement = rightAction != null ? (
+    rightAction
+  ) : rightLabel != null ? (
+    <Pressable onPress={onRightPress} style={styles.pill} hitSlop={8}>
+      <Text style={styles.pillText} numberOfLines={1}>{rightLabel}</Text>
+    </Pressable>
+  ) : (
+    <View style={styles.placeholder} />
+  );
+
   return (
-    <View style={[styles.row, { paddingTop: insets.top + spec.headerPaddingTopOffset, paddingHorizontal: spec.screenPaddingHorizontal }]}>
-      <View style={styles.side}>
-        {/* Audit note: leftLabel-only screens should not pass onBack; onBack intentionally renders a back affordance first. */}
-        {onBack != null ? (
-          <Pressable
-            onPress={onBack}
-            style={styles.pill}
-            hitSlop={8}
-          >
-            <Text style={styles.pillText}>‹</Text>
-          </Pressable>
-        ) : leftLabel ? (
-          <View style={styles.pill}>
-            <Text style={styles.pillText} numberOfLines={1}>{leftLabel}</Text>
-          </View>
-        ) : (
-          <View style={styles.placeholder} />
-        )}
-      </View>
+    <View style={[styles.row, { paddingTop: insets.top + spec.headerPaddingTopOffset, paddingHorizontal: paddingHorizontal ?? spec.screenPaddingHorizontal }, style]}>
+      {leftElement}
       {title ? (
         <Text numberOfLines={1} style={styles.title} maxFontSizeMultiplier={1.2}>
           {title}
         </Text>
       ) : (
-        <View style={styles.placeholder} />
+        <View style={styles.spacer} />
       )}
-      <View style={styles.side}>
-        {rightAction != null ? (
-          rightAction
-        ) : rightLabel != null ? (
-          <Pressable onPress={onRightPress} style={styles.pill} hitSlop={8}>
-            <Text style={styles.pillText} numberOfLines={1}>{rightLabel}</Text>
-          </Pressable>
-        ) : (
-          <View style={styles.placeholder} />
-        )}
-      </View>
+      {rightElement}
     </View>
   );
 }
@@ -66,10 +66,10 @@ const styles = StyleSheet.create({
     minHeight: spec.headerContentHeight,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 0,
+    justifyContent: 'space-between',
     backgroundColor: 'transparent',
   },
-  side: { minWidth: 80, alignItems: 'center', justifyContent: 'center' },
+  spacer: { flex: 1 },
   placeholder: { width: spec.minTouchTarget, height: spec.minTouchTarget },
   pill: {
     minHeight: spec.headerPillHeight,

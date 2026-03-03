@@ -30,9 +30,6 @@ export function GoalSelectionScreen({ navigation }: Props): React.JSX.Element {
 
   const onContinue = async (): Promise<void> => {
     if (!selected) return;
-    // #region agent log
-    fetch('http://127.0.0.1:7904/ingest/be21fb7a-55ce-4d98-bd61-5f937a7671fb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'01b4c8'},body:JSON.stringify({sessionId:'01b4c8',location:'GoalSelectionScreen.tsx:onContinue',message:'saving goal with empty dislikes',hypothesisId:'D',data:{goal:selected,dislikes:[]},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     await userRepo.saveUser({ goal: selected, dietaryPreferences: [], allergies: [], dislikes: [] });
     navigation.navigate('DietaryProfile');
   };
