@@ -1,6 +1,7 @@
 import type { Allergy, DietaryPreference, Goal } from '../domain/models';
 import { type ValidationIssue, MenuAnalysisValidationError, validateMenuAnalysisResponse } from '../validation/menuAnalysisValidator';
 import type { DishPick } from '../domain/models';
+import { requireApiKey, runWithFallback, sanitizeJsonText } from './geminiClient';
 
 export type { DishPick };
 
@@ -10,39 +11,11 @@ export type MenuAnalysisResponse = {
   avoid: DishPick[];
 };
 
-// ── Model chain ───────────────────────────────────────────────────────────────
-// Set EXPO_PUBLIC_GEMINI_MODEL env var to try a custom/newer model first.
-// On structured-output rejection, we automatically fall back down the chain.
+// Re-export PRIMARY_MODEL for docs/tests that reference it.
 export const PRIMARY_MODEL = process.env.EXPO_PUBLIC_GEMINI_MODEL ?? 'gemini-2.5-flash';
-const FALLBACK_MODEL_1 = 'gemini-2.5-flash';
-const FALLBACK_MODEL_2 = 'gemini-2.5-flash-lite';
-
-function buildModelChain(): string[] {
-  const chain = [PRIMARY_MODEL, FALLBACK_MODEL_1, FALLBACK_MODEL_2];
-  return chain.filter((m, i) => chain.indexOf(m) === i); // deduplicate, preserve order
-}
-
-// Substrings that indicate the model doesn't support structured output / JSON mode.
-// Detection is case-insensitive and based on Gemini error response bodies.
-const STRUCTURED_OUTPUT_MARKERS = [
-  'json mode is not enabled',
-  'responsemimetype',
-  'responseschema',
-  'not supported',
-  'structured output',
-];
-
-function isStructuredOutputUnsupported(errText: string): boolean {
-  const lower = errText.toLowerCase();
-  return STRUCTURED_OUTPUT_MARKERS.some((m) => lower.includes(m));
-}
 
 // ── Error types ───────────────────────────────────────────────────────────────
 
-/**
- * Thrown when Gemini returns a response that cannot be parsed as valid JSON
- * or fails contract validation. Carries the raw model text for debug surfacing.
- */
 export class MenuAnalysisInvalidJsonError extends Error {
   raw: string;
   model: string;
@@ -67,7 +40,6 @@ export class MenuAnalysisInvalidJsonError extends Error {
 
 // ── JSON Schema for Gemini responseSchema ─────────────────────────────────────
 
-// Gemini API does not support "additionalProperties" in responseSchema — omit it to avoid 400.
 const MACRO_FIELDS = {
   estimatedCalories: { type: 'number', nullable: true },
   estimatedProteinG: { type: 'number', nullable: true },
@@ -131,40 +103,7 @@ const MENU_RESPONSE_SCHEMA = {
   required: ['topPicks', 'caution', 'avoid'],
 };
 
-// ── Gemini REST call (single model) ──────────────────────────────────────────
-
-type GeminiCallError = Error & { status?: number; isStructuredUnsupported: boolean };
-
-type GeminiResponseData = {
-  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-};
-
-async function callGeminiModel(model: string, key: string, body: object): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    const structured = (res.status === 400 || res.status === 422) && isStructuredOutputUnsupported(errText);
-    const err = Object.assign(
-      new Error(`Gemini ${res.status} (${model}): ${errText}`),
-      { status: res.status, isStructuredUnsupported: structured }
-    ) as GeminiCallError;
-    throw err;
-  }
-
-  const data = (await res.json()) as GeminiResponseData;
-  return (
-    data?.candidates?.[0]?.content?.parts
-      ?.map((p) => p?.text)
-      .filter(Boolean)
-      .join('') ?? ''
-  );
-}
+const MENU_SCAN_MAX_TOKENS = 4096;
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -179,11 +118,9 @@ export async function analyzeMenuWithGemini(params: {
   pinWhitelistTop: string[];
   pinWhitelistCaution: string[];
   pinWhitelistAvoid: string[];
-  /** Computed diet-mismatch pin (e.g. "Not Keto"). Null when user has no dietary prefs. */
   dietMismatchPin?: string | null;
 }): Promise<MenuAnalysisResponse> {
-  const key = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-  if (!key) throw new Error('Missing EXPO_PUBLIC_GEMINI_API_KEY');
+  const key = requireApiKey();
 
   const dislikesLine = params.dislikes?.length
     ? `Dislikes (avoid recommending; if a top dish contains one, set noLine e.g. "No tomato"): ${params.dislikes.join(', ')}`
@@ -192,16 +129,9 @@ export async function analyzeMenuWithGemini(params: {
   const cautionPinList = params.pinWhitelistCaution.join(', ');
   const avoidPinList = params.pinWhitelistAvoid.join(', ');
   const quickFixList = [
-    'Try: sauce on the side',
-    'Try: no sauce',
-    'Try: grilled not fried',
-    'Try: swap fries for salad',
-    'Try: half portion',
-    'Try: extra veggies',
-    'Try: less oil',
-    'Try: no cheese',
-    'Try: no mayo',
-    'Try: skip dessert',
+    'Try: sauce on the side', 'Try: no sauce', 'Try: grilled not fried',
+    'Try: swap fries for salad', 'Try: half portion', 'Try: extra veggies',
+    'Try: less oil', 'Try: no cheese', 'Try: no mayo', 'Try: skip dessert',
   ].join(', ');
 
   const { dietMismatchPin } = params;
@@ -244,68 +174,55 @@ ${dietMismatchLine}
     parts.push({ inlineData: { mimeType: img.mimeType, data: img.base64 } });
   }
 
-  const body = {
+  const structuredBody = {
     contents: [{ role: 'user', parts }],
     generationConfig: {
       responseMimeType: 'application/json',
       responseSchema: MENU_RESPONSE_SCHEMA,
       temperature: 0.2,
-      maxOutputTokens: 16384,
+      maxOutputTokens: MENU_SCAN_MAX_TOKENS,
     },
   };
 
-  // Try models in chain; on any failure (network, 5xx, structured-output, etc.) try next model.
-  const models = buildModelChain();
-  let rawOutput = '';
-  let usedModel = models[0];
+  const buildPlainBody = (): object => ({
+    contents: [{ role: 'user', parts }],
+    generationConfig: { temperature: 0.2, maxOutputTokens: MENU_SCAN_MAX_TOKENS },
+  });
 
-  for (let i = 0; i < models.length; i++) {
-    const model = models[i];
-    usedModel = model;
-    try {
-      rawOutput = await callGeminiModel(model, key, body);
-      break; // success — exit loop
-    } catch (e) {
-      const callErr = e as GeminiCallError;
-      const isLast = i === models.length - 1;
-
-      if (isLast) {
-        // All models exhausted — throw with a clear message for structured-output case
-        if (callErr.isStructuredUnsupported) {
-          throw new MenuAnalysisInvalidJsonError({
-            raw: '',
-            model,
-            status: callErr.status,
-            message: `All models rejected structured output. Last error: ${callErr.message}`,
-          });
-        }
-        throw e;
-      }
-      // Not last model: try next (for any error: network, timeout, 5xx, structured-output, etc.)
-    }
+  let rawOutput: string;
+  let usedModel: string;
+  try {
+    const result = await runWithFallback({
+      taskType: 'menu_scan',
+      apiKey: key,
+      body: structuredBody,
+      supportsPlainFallback: true,
+      buildPlainBody,
+    });
+    rawOutput = result.rawText;
+    usedModel = result.model;
+  } catch (e) {
+    const err = e as Error & { status?: number };
+    throw new MenuAnalysisInvalidJsonError({
+      raw: '',
+      model: PRIMARY_MODEL,
+      status: err.status,
+      message: err.message,
+    });
   }
 
   if (!rawOutput) {
-    throw new MenuAnalysisInvalidJsonError({
-      raw: '',
-      model: usedModel,
-      message: 'Empty model response',
-    });
+    throw new MenuAnalysisInvalidJsonError({ raw: '', model: usedModel, message: 'Empty model response' });
   }
 
-  // Parse JSON — always capture raw for debug even with structured output enabled.
+  const sanitized = sanitizeJsonText(rawOutput);
   let parsed: unknown;
   try {
-    parsed = JSON.parse(rawOutput);
+    parsed = JSON.parse(sanitized);
   } catch {
-    throw new MenuAnalysisInvalidJsonError({
-      raw: rawOutput,
-      model: usedModel,
-      message: 'Model returned invalid JSON',
-    });
+    throw new MenuAnalysisInvalidJsonError({ raw: rawOutput, model: usedModel, message: 'Model returned invalid JSON' });
   }
 
-  // Contract validation — wrap issues in MenuAnalysisInvalidJsonError so raw is always attached.
   try {
     return validateMenuAnalysisResponse({
       response: parsed,
@@ -319,12 +236,7 @@ ${dietMismatchLine}
     });
   } catch (e) {
     if (e instanceof MenuAnalysisValidationError) {
-      throw new MenuAnalysisInvalidJsonError({
-        raw: rawOutput,
-        model: usedModel,
-        message: e.message,
-        issues: e.issues,
-      });
+      throw new MenuAnalysisInvalidJsonError({ raw: rawOutput, model: usedModel, message: e.message, issues: e.issues });
     }
     throw e;
   }

@@ -1,45 +1,9 @@
 import { MenuScanResult } from '../domain/models';
 import { createId } from '../utils/id';
 import * as FileSystem from 'expo-file-system/legacy';
+import { getApiKey, runWithFallback, sanitizeJsonText } from '../ai/geminiClient';
 
-const GEMINI_TEXT_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
-const GEMINI_VISION_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
-
-type GeminiTextRequest = {
-  contents: Array<{
-    role?: string;
-    parts: Array<{ text: string }>;
-  }>;
-};
-
-type GeminiVisionRequest = {
-  contents: Array<{
-    parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }>;
-  }>;
-  generationConfig?: {
-    response_mime_type?: string;
-    response_json_schema?: unknown;
-    temperature?: number;
-    maxOutputTokens?: number;
-  };
-};
-
-type GeminiResponse = {
-  candidates?: Array<{
-    content?: {
-      parts?: Array<{ text?: string }>;
-    };
-  }>;
-  error?: { message?: string; code?: number };
-};
-
-function getApiKey(): string | null {
-  const key = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-  if (!key || key === 'your_key_here' || key.trim() === '') {
-    return null;
-  }
-  return key;
-}
+// ── Mocks ─────────────────────────────────────────────────────────────────────
 
 function createMockMenuResult(): MenuScanResult {
   return {
@@ -64,6 +28,8 @@ function createMockMenuResult(): MenuScanResult {
 function createMockChatResponse(): string {
   return 'I can help you with meal planning! Add your Gemini API key to enable AI-powered responses.';
 }
+
+// ── uriToBase64 (public, unchanged) ───────────────────────────────────────────
 
 export async function uriToBase64(uri: string): Promise<string | null> {
   if (uri.startsWith('data:')) {
@@ -97,57 +63,7 @@ export async function uriToBase64(uri: string): Promise<string | null> {
   return uri;
 }
 
-async function callGeminiTextAPI(payload: GeminiTextRequest): Promise<string> {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    throw new Error('API_KEY_MISSING');
-  }
-
-  const url = `${GEMINI_TEXT_API_URL}?key=${encodeURIComponent(apiKey)}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Gemini error ${response.status}: ${errText}`);
-  }
-
-  const data: GeminiResponse = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.map((p) => p?.text).filter(Boolean).join('') ?? '';
-  if (!text) {
-    throw new Error('Empty response from Gemini');
-  }
-  return text;
-}
-
-async function callGeminiVisionAPI(payload: GeminiVisionRequest): Promise<string> {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    throw new Error('API_KEY_MISSING');
-  }
-
-  const url = `${GEMINI_VISION_API_URL}?key=${encodeURIComponent(apiKey)}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Gemini error ${response.status}: ${errText}`);
-  }
-
-  const data: GeminiResponse = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.map((p) => p?.text).filter(Boolean).join('') ?? '';
-  if (!text) {
-    throw new Error('Empty response from Gemini');
-  }
-  return text;
-}
+// ── Legacy analyzeMenu (kept for backwards compat, not used by scan flow) ─────
 
 function parseMenuAnalysis(text: string, images: string[]): MenuScanResult {
   try {
@@ -169,10 +85,7 @@ function parseMenuAnalysis(text: string, images: string[]): MenuScanResult {
 
 export async function analyzeMenu(input: string | string[] | { base64: string; mimeType: string }): Promise<MenuScanResult> {
   const apiKey = getApiKey();
-
-  if (!apiKey) {
-    return createMockMenuResult();
-  }
+  if (!apiKey) return createMockMenuResult();
 
   try {
     let base64Image: string | null = null;
@@ -187,13 +100,9 @@ export async function analyzeMenu(input: string | string[] | { base64: string; m
       const images = Array.isArray(input) ? input : [input];
       imageUris = images;
       const firstImage = images[0];
-      if (!firstImage) {
-        return createMockMenuResult();
-      }
+      if (!firstImage) return createMockMenuResult();
       base64Image = await uriToBase64(firstImage);
-      if (!base64Image) {
-        return createMockMenuResult();
-      }
+      if (!base64Image) return createMockMenuResult();
     }
 
     const prompt = `Analyze this menu image and return JSON with:
@@ -204,35 +113,27 @@ export async function analyzeMenu(input: string | string[] | { base64: string; m
   "summaryText": "..."
 }`;
 
-    const payload: GeminiVisionRequest = {
-      contents: [
-        {
-          parts: [
-            { text: prompt },
-            {
-              inlineData: {
-                mimeType,
-                data: base64Image,
-              },
-            },
-          ],
-        },
-      ],
+    const body = {
+      contents: [{
+        parts: [
+          { text: prompt },
+          { inlineData: { mimeType, data: base64Image } },
+        ],
+      }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 4096 },
     };
 
-    const responseText = await callGeminiVisionAPI(payload);
-    return parseMenuAnalysis(responseText, imageUris);
-  } catch (error) {
-    if (error instanceof Error && error.message === 'API_KEY_MISSING') {
-      return createMockMenuResult();
-    }
+    const { rawText } = await runWithFallback({ taskType: 'legacy_menu', apiKey, body });
+    return parseMenuAnalysis(rawText, imageUris);
+  } catch {
     return createMockMenuResult();
   }
 }
 
+// ── Meal photo analysis ───────────────────────────────────────────────────────
+
 const MEAL_SCHEMA = {
   type: 'object',
-  additionalProperties: false,
   properties: {
     caloriesKcal: { type: 'number' },
     proteinG: { type: 'number' },
@@ -243,135 +144,92 @@ const MEAL_SCHEMA = {
   required: ['caloriesKcal', 'proteinG', 'carbsG', 'fatG', 'description'],
 } as const;
 
+const MEAL_DEFAULTS = { caloriesKcal: 450, proteinG: 30, carbsG: 40, fatG: 15 };
+
 export async function analyzeMealPhoto(imageUri: string): Promise<{ macros: { caloriesKcal: number; proteinG: number; carbsG: number; fatG: number }; description: string }> {
   const apiKey = getApiKey();
-
-  if (!apiKey) {
-    return {
-      macros: { caloriesKcal: 450, proteinG: 30, carbsG: 40, fatG: 15 },
-      description: 'Meal logged. Add API key for AI analysis.',
-    };
-  }
+  if (!apiKey) return { macros: { ...MEAL_DEFAULTS }, description: 'Meal logged. Add API key for AI analysis.' };
 
   try {
     const base64Image = await uriToBase64(imageUri);
-    if (!base64Image) {
-      return {
-        macros: { caloriesKcal: 450, proteinG: 30, carbsG: 40, fatG: 15 },
-        description: 'Meal logged. Could not process image.',
-      };
-    }
+    if (!base64Image) return { macros: { ...MEAL_DEFAULTS }, description: 'Meal logged. Could not process image.' };
 
-    const prompt = 'Analyze this meal photo and return JSON with caloriesKcal, proteinG, carbsG, fatG (numbers) and description (string).';
+    const prompt = 'Return ONLY JSON. No markdown. No extra text. Analyze this meal photo and return JSON with caloriesKcal, proteinG, carbsG, fatG (numbers) and description (string).';
 
-    const payload: GeminiVisionRequest = {
-      contents: [
-        {
-          parts: [
-            { text: prompt },
-            {
-              inlineData: {
-                mimeType: 'image/jpeg',
-                data: base64Image,
-              },
-            },
-          ],
-        },
-      ],
+    const structuredBody = {
+      contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: base64Image } }] }],
       generationConfig: {
-        response_mime_type: 'application/json',
-        response_json_schema: MEAL_SCHEMA,
+        responseMimeType: 'application/json',
+        responseSchema: MEAL_SCHEMA,
         temperature: 0.2,
-        maxOutputTokens: 200,
+        maxOutputTokens: 512,
       },
     };
 
-    const responseText = await callGeminiVisionAPI(payload);
-    let parsed: any;
-    try {
-      parsed = JSON.parse(responseText);
-    } catch (parseError) {
-      // Retry with stricter prompt
-      const retryPrompt = 'Return ONLY JSON. No markdown. No extra text. Analyze this meal photo and return JSON with caloriesKcal, proteinG, carbsG, fatG (numbers) and description (string).';
-      const retryPayload: GeminiVisionRequest = {
-        contents: [
-          {
-            parts: [
-              { text: retryPrompt },
-              {
-                inlineData: {
-                  mimeType: 'image/jpeg',
-                  data: base64Image,
-                },
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          response_mime_type: 'application/json',
-          response_json_schema: MEAL_SCHEMA,
-          temperature: 0.2,
-          maxOutputTokens: 200,
-        },
-      };
+    const buildPlainBody = (): object => ({
+      contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: base64Image } }] }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 512 },
+    });
 
-      const retryResponseText = await callGeminiVisionAPI(retryPayload);
-      try {
-        parsed = JSON.parse(retryResponseText);
-      } catch (retryParseError) {
-        console.warn(`Meal photo analysis JSON parse failed after retry: ${retryParseError instanceof Error ? retryParseError.message : String(retryParseError)}`);
-        throw new Error('Model returned invalid JSON after retry');
-      }
-    }
+    const { rawText } = await runWithFallback({
+      taskType: 'meal_photo',
+      apiKey,
+      body: structuredBody,
+      supportsPlainFallback: true,
+      buildPlainBody,
+    });
+
+    const cleaned = sanitizeJsonText(rawText);
+    const parsed = JSON.parse(cleaned) as Record<string, unknown>;
 
     return {
       macros: {
-        caloriesKcal: parsed.caloriesKcal || 450,
-        proteinG: parsed.proteinG || 30,
-        carbsG: parsed.carbsG || 40,
-        fatG: parsed.fatG || 15,
+        caloriesKcal: (parsed.caloriesKcal as number) || MEAL_DEFAULTS.caloriesKcal,
+        proteinG: (parsed.proteinG as number) || MEAL_DEFAULTS.proteinG,
+        carbsG: (parsed.carbsG as number) || MEAL_DEFAULTS.carbsG,
+        fatG: (parsed.fatG as number) || MEAL_DEFAULTS.fatG,
       },
-      description: parsed.description || 'Meal analyzed.',
+      description: (parsed.description as string) || 'Meal analyzed.',
     };
   } catch (error) {
     console.warn(`Meal photo analysis failed: ${error instanceof Error ? error.message : String(error)}`);
-    return {
-      macros: { caloriesKcal: 450, proteinG: 30, carbsG: 40, fatG: 15 },
-      description: 'Meal logged. AI analysis unavailable.',
-    };
+    return { macros: { ...MEAL_DEFAULTS }, description: 'Meal logged. AI analysis unavailable.' };
   }
 }
 
-export async function askBuddy(message: string, context?: any): Promise<string> {
-  const apiKey = getApiKey();
+// ── Chat (askBuddy) ───────────────────────────────────────────────────────────
 
-  if (!apiKey) {
-    return createMockChatResponse();
-  }
+export async function askBuddy(message: string, context?: unknown): Promise<string> {
+  const apiKey = getApiKey();
+  if (!apiKey) return createMockChatResponse();
 
   try {
     const contextText = context ? `Context: ${JSON.stringify(context)}\n\n` : '';
     const prompt = `${contextText}User question: ${message}\n\nProvide a helpful, concise response about nutrition and meal planning.`;
 
-    const payload: GeminiTextRequest = {
+    const body = {
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
     };
 
-    return await callGeminiTextAPI(payload);
+    const { rawText } = await runWithFallback({ taskType: 'chat', apiKey, body });
+    return rawText || createMockChatResponse();
   } catch {
     return createMockChatResponse();
   }
 }
 
-export async function geminiTextTest(prompt: string): Promise<string> {
-  const key = getApiKey();
-  if (!key) {
-    throw new Error('Missing EXPO_PUBLIC_GEMINI_API_KEY');
-  }
+// ── Test helper ───────────────────────────────────────────────────────────────
 
-  const payload: GeminiTextRequest = {
+export async function geminiTextTest(prompt: string): Promise<string> {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error('Missing EXPO_PUBLIC_GEMINI_API_KEY');
+
+  const body = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
   };
 
-  return await callGeminiTextAPI(payload);
+  const { rawText } = await runWithFallback({ taskType: 'chat', apiKey, body });
+  if (!rawText) throw new Error('Empty response from Gemini');
+  return rawText;
 }
