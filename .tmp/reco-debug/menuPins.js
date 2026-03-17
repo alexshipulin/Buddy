@@ -4,20 +4,21 @@ exports.getPinWhitelist = getPinWhitelist;
 exports.getCautionPinWhitelist = getCautionPinWhitelist;
 exports.getAvoidPinWhitelist = getAvoidPinWhitelist;
 exports.getDietMismatchPin = getDietMismatchPin;
+exports.normalizePinLabel = normalizePinLabel;
+exports.normalizePinLabels = normalizePinLabels;
 exports.buildDeterministicPins = buildDeterministicPins;
 const LOSE_FAT_PINS = [
-    'Low calorie',
+    'Low-calorie',
     'High fiber',
     'Lean protein',
     'Low sodium',
     'Low sugar',
-    'Portion-friendly',
+    'Portion-aware',
     'Filling',
-    'Veggie-rich',
+    'Vegetables',
     'Grilled/steamed',
     'Light dressing',
     'Whole foods',
-    'Not fried',
 ];
 const MAINTAIN_WEIGHT_PINS = [
     'Balanced',
@@ -25,40 +26,31 @@ const MAINTAIN_WEIGHT_PINS = [
     'Whole grains',
     'Vegetables',
     'Lean protein',
-    'Fiber',
+    'High fiber',
     'Low sodium',
-    'Variety',
     'Healthy fats',
     'Portion-aware',
-    'Fresh',
     'Whole foods',
 ];
 const GAIN_MUSCLE_PINS = [
     'High protein',
-    'Best protein',
     'Lean protein',
-    'Calorie sufficient',
-    'Strength support',
-    'Recovery',
+    'Enough calories',
     'Balanced',
     'Whole foods',
-    'Nutrient dense',
-    'No empty calories',
+    'Nutrient-rich',
     'Healthy fats',
     'Carbs included',
 ];
 const EAT_HEALTHIER_PINS = [
     'Whole foods',
-    'Veggie-rich',
-    'Less processed',
-    'Fiber',
+    'Vegetables',
+    'High fiber',
     'Low sodium',
     'Low sugar',
     'Healthy fats',
     'Balanced',
-    'Fresh',
-    'Variety',
-    'Nutrient dense',
+    'Nutrient-rich',
     'Grilled/steamed',
 ];
 const GOAL_PINS = {
@@ -71,22 +63,22 @@ const GOAL_PINS = {
 // "Diet Mismatch" is NOT included here; it is replaced by a computed goal-specific
 // pin (e.g. "Not Keto") and injected at runtime by GeminiMenuAnalysisProvider.
 const CAUTION_LOSE_FAT_PINS = [
-    'High calories',
-    'High Fat',
+    'High-calorie',
+    'High fat',
     'Fried',
-    'Sugary',
-    'Heavy Sauce',
+    'High sugar',
+    'Heavy sauce',
     'Refined Carbs',
-    'High Sodium',
+    'High sodium',
     'Allergen',
     'Dislike',
 ];
 const CAUTION_MAINTAIN_WEIGHT_PINS = [
-    'High Sodium',
-    'High Sugar',
-    'High Fat',
+    'High sodium',
+    'High sugar',
+    'High fat',
     'Fried',
-    'Heavy Sauce',
+    'Heavy sauce',
     'Refined Carbs',
     'Low Fiber',
     'Allergen',
@@ -94,34 +86,31 @@ const CAUTION_MAINTAIN_WEIGHT_PINS = [
 ];
 const CAUTION_GAIN_MUSCLE_PINS = [
     'Low Protein',
-    'Too Low Cals',
+    'Small portion',
     'No Carbs',
-    'Small Portion',
-    'High Sugar',
+    'High sugar',
     'Fried',
-    'Heavy Sauce',
+    'Heavy sauce',
     'Allergen',
     'Dislike',
 ];
 const CAUTION_EAT_HEALTHIER_PINS = [
     'Processed',
-    'High Sodium',
-    'Added Sugar',
+    'High sodium',
+    'High sugar',
     'Fried',
-    'Heavy Sauce',
+    'Heavy sauce',
     'Refined Carbs',
     'High sat fat',
     'Allergen',
     'Dislike',
 ];
 const AVOID_LOSE_FAT_PINS = [
-    'High calories',
-    'Deep-fried',
+    'High-calorie',
     'Fried',
-    'Added Sugar',
+    'High sugar',
     'High sat fat',
-    'Creamy',
-    'Heavy Sauce',
+    'Heavy sauce',
     'High carbs',
     'Refined Carbs',
     'Processed',
@@ -129,13 +118,11 @@ const AVOID_LOSE_FAT_PINS = [
     'Dislike',
 ];
 const AVOID_MAINTAIN_WEIGHT_PINS = [
-    'Very High Sodium',
-    'Added Sugar',
-    'Deep-fried',
+    'High sodium',
+    'High sugar',
     'Fried',
     'High sat fat',
-    'Creamy',
-    'Heavy Sauce',
+    'Heavy sauce',
     'Ultra-processed',
     'Processed',
     'Refined Carbs',
@@ -144,11 +131,9 @@ const AVOID_MAINTAIN_WEIGHT_PINS = [
 ];
 const AVOID_GAIN_MUSCLE_PINS = [
     'Very Low Protein',
-    'Too Low Cals',
+    'Small portion',
     'No Carbs',
-    'Tiny Portion',
-    'Added Sugar',
-    'Deep-fried',
+    'High sugar',
     'Fried',
     'High sat fat',
     'Processed',
@@ -158,13 +143,11 @@ const AVOID_GAIN_MUSCLE_PINS = [
 const AVOID_EAT_HEALTHIER_PINS = [
     'Ultra-processed',
     'Processed',
-    'Very High Sodium',
-    'Added Sugar',
-    'Deep-fried',
+    'High sodium',
+    'High sugar',
     'Fried',
     'High sat fat',
-    'Creamy',
-    'Heavy Sauce',
+    'Heavy sauce',
     'Refined Carbs',
     'Allergen',
     'Dislike',
@@ -181,7 +164,7 @@ const GOAL_AVOID_PINS = {
     'Gain muscle': AVOID_GAIN_MUSCLE_PINS,
     'Eat healthier': AVOID_EAT_HEALTHIER_PINS,
 };
-/** Returns the pin whitelist for the given goal (12 pins). Pins in AI response must be a subset of this list. */
+/** Returns the pin whitelist for the given goal. Pins in AI response must be a subset of this list. */
 function getPinWhitelist(goal) {
     return [...GOAL_PINS[goal]];
 }
@@ -212,86 +195,150 @@ function getDietMismatchPin(dietaryPreferences) {
         return null;
     return DIET_MISMATCH_PIN_MAP[dietaryPreferences[0]] ?? null;
 }
-function normalizeAllergenName(allergen) {
-    const normalized = allergen.trim().toLocaleLowerCase();
-    if (normalized === 'peanuts')
-        return 'peanut';
-    if (normalized === 'tree nuts (almonds, walnuts, cashews)')
-        return 'tree nuts';
-    if (normalized === 'crustacean shellfish (shrimp, crab, lobster)')
-        return 'shellfish';
+const LEGACY_PIN_CANONICAL_MAP = {
+    'High Fat': 'High fat',
+    'High Sugar': 'High sugar',
+    'Added Sugar': 'High sugar',
+    Sugary: 'High sugar',
+    'High Sodium': 'High sodium',
+    'Very High Sodium': 'High sodium',
+    Fiber: 'High fiber',
+    'Veggie-rich': 'Vegetables',
+    'Portion-friendly': 'Portion-aware',
+    'Small Portion': 'Small portion',
+    'Tiny Portion': 'Small portion',
+    'Too Low Cals': 'Small portion',
+    'Deep-fried': 'Fried',
+    'Heavy Sauce': 'Heavy sauce',
+    Creamy: 'Heavy sauce',
+    'Best protein': 'High protein',
+    Fresh: 'Whole foods',
+    'Less processed': 'Whole foods',
+    'High calories': 'High-calorie',
+    'Low calorie': 'Low-calorie',
+    'Calorie sufficient': 'Enough calories',
+    'Nutrient dense': 'Nutrient-rich',
+};
+const REMOVED_PIN_SET = new Set([
+    'No empty calories',
+    'Strength support',
+    'Recovery',
+    'Variety',
+    'Not fried',
+]);
+function normalizePinLabel(pin) {
+    const trimmed = pin.trim();
+    if (!trimmed)
+        return null;
+    if (REMOVED_PIN_SET.has(trimmed))
+        return null;
+    return LEGACY_PIN_CANONICAL_MAP[trimmed] ?? trimmed;
+}
+function normalizePinLabels(pins) {
+    const normalized = [];
+    const seen = new Set();
+    for (const pin of pins) {
+        const mapped = normalizePinLabel(pin);
+        if (!mapped || seen.has(mapped))
+            continue;
+        seen.add(mapped);
+        normalized.push(mapped);
+    }
     return normalized;
 }
-function pushUnique(target, value) {
-    if (!value)
+function addIfWhitelisted(target, whitelist, pin) {
+    if (!whitelist.includes(pin))
         return;
-    if (!target.includes(value))
-        target.push(value);
+    if (target.includes(pin))
+        return;
+    target.push(pin);
 }
 function buildDeterministicPins(params) {
-    const pins = [];
-    const riskPins = [];
-    const flags = params.flags ?? {};
-    const allergenSignals = params.allergenSignals;
-    const dislikeSignals = params.dislikeSignals;
-    if (params.protein >= 35) {
-        pushUnique(pins, params.goal === 'Gain muscle' ? 'Best protein' : 'High protein');
-    }
-    else if (params.protein >= 24) {
-        pushUnique(pins, 'Lean protein');
-    }
-    if (params.calories > 0 && params.calories <= 650)
-        pushUnique(pins, 'Portion-aware');
-    if (params.carbs > 0 && params.carbs <= 45)
-        pushUnique(pins, 'Lower carb');
-    if (flags.wholeFood)
-        pushUnique(pins, 'Whole foods');
-    if (flags.veggieForward)
-        pushUnique(pins, 'Veggie-forward');
-    if (!flags.processed && !flags.fried && params.section === 'top')
-        pushUnique(pins, 'Fresh');
-    if (pins.length === 0 && params.section === 'top')
-        pushUnique(pins, 'Balanced');
-    if (params.calories >= 850)
-        pushUnique(riskPins, 'High calories');
-    if (params.fat >= 34)
-        pushUnique(riskPins, 'High fat');
-    if (params.carbs >= 75)
-        pushUnique(riskPins, 'High carbs');
-    if (flags.fried)
-        pushUnique(riskPins, 'Fried');
-    if (flags.processed)
-        pushUnique(riskPins, 'Processed');
-    if (flags.dessert)
-        pushUnique(riskPins, 'Dessert');
-    if (flags.sugaryDrink)
-        pushUnique(riskPins, 'Sugary drink');
-    if (flags.highFatSauce)
-        pushUnique(riskPins, 'Heavy sauce');
-    if (flags.refinedCarbHeavy)
-        pushUnique(riskPins, 'Refined carbs');
-    const selectedAllergies = params.selectedAllergies
-        .map(normalizeAllergenName)
-        .filter(Boolean);
-    const contained = (allergenSignals?.contains ?? [])
-        .map(normalizeAllergenName)
-        .filter(Boolean);
-    for (const selected of selectedAllergies) {
-        if (contained.some((item) => item.includes(selected) || selected.includes(item))) {
-            pushUnique(riskPins, `Contains ${selected}`);
+    const topWhitelist = getPinWhitelist(params.goal);
+    const cautionWhitelist = getCautionPinWhitelist(params.goal);
+    const avoidWhitelist = getAvoidPinWhitelist(params.goal);
+    const riskWhitelist = params.section === 'caution' ? cautionWhitelist : avoidWhitelist;
+    if (params.section === 'top') {
+        const pins = [];
+        if (params.protein >= 30)
+            addIfWhitelisted(pins, topWhitelist, 'High protein');
+        if (params.flags?.leanProtein)
+            addIfWhitelisted(pins, topWhitelist, 'Lean protein');
+        if (params.flags?.veggieForward)
+            addIfWhitelisted(pins, topWhitelist, 'Vegetables');
+        if (params.flags?.wholeFood)
+            addIfWhitelisted(pins, topWhitelist, 'Whole foods');
+        if (params.goal === 'Gain muscle' && params.calories >= 450) {
+            addIfWhitelisted(pins, topWhitelist, 'Enough calories');
         }
+        if (params.goal === 'Lose fat' && params.calories > 0 && params.calories <= 550) {
+            addIfWhitelisted(pins, topWhitelist, 'Low-calorie');
+        }
+        if (params.carbs >= 30 && params.goal === 'Gain muscle') {
+            addIfWhitelisted(pins, topWhitelist, 'Carbs included');
+        }
+        if (params.fat >= 10 && params.fat <= 28) {
+            addIfWhitelisted(pins, topWhitelist, 'Healthy fats');
+        }
+        if (pins.length < 3) {
+            for (const pin of topWhitelist) {
+                if (pins.includes(pin))
+                    continue;
+                pins.push(pin);
+                if (pins.length >= 3)
+                    break;
+            }
+        }
+        return {
+            pins: pins.slice(0, 4),
+            riskPins: [],
+        };
     }
-    if (allergenSignals?.unclear)
-        pushUnique(riskPins, 'Allergen unclear');
-    if (allergenSignals?.noListedAllergen)
-        pushUnique(pins, 'No listed allergen');
-    if (dislikeSignals?.containsDislikedIngredient) {
-        pushUnique(riskPins, (dislikeSignals.removableDislikedIngredients?.length ?? 0) > 0
-            ? 'Dislike (removable)'
-            : 'Dislike');
+    const riskPins = [];
+    if (params.calories >= 650)
+        addIfWhitelisted(riskPins, riskWhitelist, 'High-calorie');
+    if (params.fat >= 30)
+        addIfWhitelisted(riskPins, riskWhitelist, 'High fat');
+    if (params.flags?.fried)
+        addIfWhitelisted(riskPins, riskWhitelist, 'Fried');
+    if (params.flags?.highFatSauce)
+        addIfWhitelisted(riskPins, riskWhitelist, 'Heavy sauce');
+    if (params.flags?.refinedCarbHeavy)
+        addIfWhitelisted(riskPins, riskWhitelist, 'Refined Carbs');
+    if (params.flags?.processed) {
+        addIfWhitelisted(riskPins, riskWhitelist, 'Processed');
+        addIfWhitelisted(riskPins, riskWhitelist, 'Ultra-processed');
+    }
+    if (params.flags?.sugaryDrink || params.flags?.dessert) {
+        addIfWhitelisted(riskPins, riskWhitelist, 'High sugar');
+    }
+    if (params.fat >= 38)
+        addIfWhitelisted(riskPins, riskWhitelist, 'High sat fat');
+    if (params.carbs >= 65)
+        addIfWhitelisted(riskPins, riskWhitelist, 'High carbs');
+    const hasAllergenPressure = (params.allergenSignals?.contains?.length ?? 0) > 0 ||
+        Boolean(params.allergenSignals?.unclear);
+    if (params.selectedAllergies.length > 0 && hasAllergenPressure) {
+        addIfWhitelisted(riskPins, riskWhitelist, 'Allergen');
+    }
+    if (params.dislikeSignals?.containsDislikedIngredient) {
+        addIfWhitelisted(riskPins, riskWhitelist, 'Dislike');
+    }
+    if (params.goal === 'Gain muscle') {
+        if (params.protein > 0 && params.protein < 25)
+            addIfWhitelisted(riskPins, riskWhitelist, 'Low Protein');
+        if (params.protein > 0 && params.protein < 18)
+            addIfWhitelisted(riskPins, riskWhitelist, 'Very Low Protein');
+        if (params.calories > 0 && params.calories < 350)
+            addIfWhitelisted(riskPins, riskWhitelist, 'Small portion');
+        if (params.carbs > 0 && params.carbs < 20)
+            addIfWhitelisted(riskPins, riskWhitelist, 'No Carbs');
+    }
+    if (riskPins.length === 0 && riskWhitelist.length > 0) {
+        riskPins.push(riskWhitelist[0]);
     }
     return {
-        pins: pins.slice(0, 4),
-        riskPins: riskPins.slice(0, 4),
+        pins: [],
+        riskPins: riskPins.slice(0, 3),
     };
 }

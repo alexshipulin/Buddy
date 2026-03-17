@@ -1,8 +1,6 @@
 import { GeminiMenuAnalysisProvider } from '../data/providers/GeminiMenuAnalysisProvider';
 import { MenuAnalysisFailedError } from '../data/providers/GeminiMenuAnalysisProvider';
-import { MockMenuAnalysisProvider } from '../data/providers/MockMenuAnalysisProvider';
 import { MenuAnalysisProvider } from '../data/providers/MenuAnalysisProvider';
-import { TEST_MODE } from '../config/flags';
 import { AppPrefsRepo } from '../data/repos/AppPrefsRepo';
 import { ChatRepo } from '../data/repos/ChatRepo';
 import { DailyNutritionRepo } from '../data/repos/DailyNutritionRepo';
@@ -26,18 +24,16 @@ function createMenuAnalysisProvider(): MenuAnalysisProvider {
     return new GeminiMenuAnalysisProvider();
   }
 
-  // Keep mock provider available for local dev/test only.
-  if (__DEV__ || TEST_MODE) {
-    return new MockMenuAnalysisProvider();
-  }
-
   // In production builds, fail explicitly instead of silently using mock data.
   return {
     async analyzeMenu(
       _images: string[],
       _user: import('../domain/models').UserProfile,
-      _signal?: AbortSignal,
-      _context?: import('../data/providers/MenuAnalysisProvider').MenuAnalysisContext
+      _deps: {
+        historyRepo: import('../data/repos/HistoryRepo').HistoryRepo;
+        analysisId?: number;
+        sessionId?: string;
+      }
     ): Promise<never> {
       throw new MenuAnalysisFailedError(
         'Missing EXPO_PUBLIC_GEMINI_API_KEY. Configure it in EAS environment variables and rebuild.'

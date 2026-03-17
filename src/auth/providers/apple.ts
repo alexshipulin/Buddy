@@ -20,6 +20,11 @@ type AppleAuthenticationModule = {
 
 type ExpoCryptoModule = {
   getRandomBytesAsync: (byteCount: number) => Promise<Uint8Array>;
+  digestStringAsync?: (
+    algorithm: string,
+    data: string,
+    options?: { encoding?: string }
+  ) => Promise<string>;
 };
 
 type GlobalCryptoLike = {
@@ -83,6 +88,34 @@ function getGlobalCryptoBytes(byteCount: number): Uint8Array | null {
   return bytes;
 }
 
+function getGlobalSubtleCrypto():
+  | {
+      digest: (algorithm: string, data: ArrayBuffer) => Promise<ArrayBuffer>;
+    }
+  | null {
+  if (typeof globalThis === 'undefined') return null;
+  const maybeCrypto = (globalThis as { crypto?: { subtle?: unknown } }).crypto;
+  const maybeSubtle = maybeCrypto?.subtle;
+  if (!maybeSubtle || typeof maybeSubtle !== 'object') return null;
+  if (
+    !('digest' in maybeSubtle) ||
+    typeof (maybeSubtle as { digest?: unknown }).digest !== 'function'
+  ) {
+    return null;
+  }
+  return maybeSubtle as {
+    digest: (algorithm: string, data: ArrayBuffer) => Promise<ArrayBuffer>;
+  };
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  let result = '';
+  for (const byte of bytes) {
+    result += byte.toString(16).padStart(2, '0');
+  }
+  return result;
+}
+
 function toBase64Url(bytes: Uint8Array): string {
   let base64 = '';
   for (let i = 0; i < bytes.length; i += 3) {
@@ -114,6 +147,25 @@ async function createNonce(): Promise<string> {
   );
 }
 
+async function hashNonceForApple(rawNonce: string): Promise<string> {
+  const crypto = getExpoCryptoModule();
+  if (crypto?.digestStringAsync) {
+    return crypto.digestStringAsync('SHA-256', rawNonce, { encoding: 'hex' });
+  }
+
+  const subtle = getGlobalSubtleCrypto();
+  if (subtle && typeof TextEncoder !== 'undefined') {
+    const data = new TextEncoder().encode(rawNonce);
+    const digest = await subtle.digest('SHA-256', data.buffer);
+    return bytesToHex(new Uint8Array(digest));
+  }
+
+  throw new AppleSignInError(
+    'not_available',
+    'Crypto module is unavailable. Install expo-crypto or use a runtime with global crypto support.'
+  );
+}
+
 export async function signInWithApple(): Promise<AppleSignInSuccess> {
   const appleAuth = getAppleAuthenticationModule();
   if (!appleAuth) {
@@ -132,13 +184,14 @@ export async function signInWithApple(): Promise<AppleSignInSuccess> {
   }
 
   const nonce = await createNonce();
+  const hashedNonce = await hashNonceForApple(nonce);
   let credential: AppleAuthenticationCredential;
   try {
     credential = await appleAuth.signInAsync({
       requestedScopes: [
         appleAuth.AppleAuthenticationScope.EMAIL,
       ],
-      nonce,
+      nonce: hashedNonce,
     });
   } catch (error) {
     const code =

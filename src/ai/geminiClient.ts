@@ -36,11 +36,13 @@ const STRUCTURED_MARKERS = [
   'json mode is not enabled',
   'responsemimetype',
   'responseschema',
+  'response_schema',
   'not supported',
   'structured output',
   'is not supported for generatecontent',
   'specified schema produces a constraint that has too many states for serving',
   'too many states for serving',
+  'unknown name "additionalproperties"',
 ];
 
 // ── Model chains per task ─────────────────────────────────────────────────────

@@ -16,6 +16,7 @@
     "test:menu-validation": "node scripts/run-menu-validator-tests.cjs",
     "ai-debug:sink": "node scripts/ai-debug-local-sink.mjs",
     "ai-debug:scan": "node scripts/ai-debug-read-by-scan.mjs",
+    "ai-debug:firestore-scan": "node scripts/ai-debug-firestore-read-by-scan.mjs",
     "check": "npm run typecheck && npm run verify:alerts && npm run test:menu-validation && echo \"✅ Check passed. Run 'npm start' to test in simulator. See UI_QA.md for checklist.\""
   },
   "dependencies": {
@@ -29,6 +30,7 @@
     "expo-clipboard": "~8.0.8",
     "expo-crypto": "~15.0.8",
     "expo-file-system": "^19.0.21",
+    "expo-image-manipulator": "~14.0.8",
     "expo-image-picker": "~17.0.10",
     "expo-media-library": "~18.2.1",
     "expo-secure-store": "~15.0.8",

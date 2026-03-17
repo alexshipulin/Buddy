@@ -8,16 +8,11 @@ export function getMealPeriod(date: Date): MealPeriod {
   return 'dinner';
 }
 
-// Returns how many meals are expected remaining after this one, including current
-// breakfast -> 3 meals ahead (lunch, snack, dinner)
-// lunch     -> 2 meals ahead (snack, dinner)
-// snack     -> 1 meal ahead (dinner)
-// dinner    -> 0 meals ahead (this is the last one)
 export function getMealsRemainingAfter(period: MealPeriod): number {
   if (period === 'breakfast') return 3;
   if (period === 'lunch') return 2;
   if (period === 'snack') return 1;
-  return 0; // dinner
+  return 0;
 }
 
 export function isLastMeal(period: MealPeriod): boolean {

@@ -4,10 +4,10 @@ import { MealPeriod, isLastMeal, getMealsRemainingAfter } from './mealTiming';
 
 export type DishContextResult = {
   contextNote: string | undefined;
-  shouldDowngrade: boolean; // true = TOP -> OK
+  shouldDowngrade: boolean;
 };
 
-function getRemainingMacros(targets: MacroTotals, eaten: MacroTotals): MacroTotals {
+function getRemaining(targets: MacroTotals, eaten: MacroTotals): MacroTotals {
   return {
     caloriesKcal: targets.caloriesKcal - eaten.caloriesKcal,
     proteinG: targets.proteinG - eaten.proteinG,
@@ -16,160 +16,90 @@ function getRemainingMacros(targets: MacroTotals, eaten: MacroTotals): MacroTota
   };
 }
 
-// Returns true if dish takes more than 60% of remaining nutrient
 function exceedsRemainder(dishValue: number, remainingValue: number): boolean {
   if (remainingValue <= 0) return true;
   return dishValue / remainingValue > 0.6;
 }
 
-// Returns true if nutrient is already over daily target
-function isOverLimit(eaten: number, target: number): boolean {
+function isOver(eaten: number, target: number): boolean {
   return eaten >= target;
 }
 
 export function computeDishContext(params: {
   dish: RawDish;
   goal: Goal;
-  dailyTargets: MacroTotals | null | undefined;
+  dailyTargets: MacroTotals | null;
   eatenToday: MacroTotals;
   mealPeriod: MealPeriod;
 }): DishContextResult {
+  if (!params.dailyTargets || !params.dish.nutrition) {
+    return { contextNote: undefined, shouldDowngrade: false };
+  }
+
   const { dish, goal, dailyTargets, eatenToday, mealPeriod } = params;
+  const remaining = getRemaining(dailyTargets, eatenToday);
+  const last = isLastMeal(mealPeriod);
+  const mealsLeft = getMealsRemainingAfter(mealPeriod);
+  const nut = dish.nutrition;
 
-  if (!dailyTargets) {
-    return { contextNote: undefined, shouldDowngrade: false };
+  function result(note: string, downgrade: boolean): DishContextResult {
+    return { contextNote: note, shouldDowngrade: downgrade && !last };
   }
-  if (!dish.nutrition) {
-    return { contextNote: undefined, shouldDowngrade: false };
-  }
-
-  const lastMeal = isLastMeal(mealPeriod);
-  const mealsRemainingAfter = getMealsRemainingAfter(mealPeriod);
-  const remaining = getRemainingMacros(dailyTargets, eatenToday);
-
-  const withDowngradeRule = (
-    contextNote: string | undefined,
-    shouldDowngrade: boolean
-  ): DishContextResult => ({
-    contextNote,
-    shouldDowngrade: lastMeal ? false : shouldDowngrade,
-  });
 
   if (goal === 'Lose fat') {
-    if (isOverLimit(eatenToday.caloriesKcal, dailyTargets.caloriesKcal)) {
-      return { contextNote: "You've hit your calorie limit today", shouldDowngrade: true };
+    if (isOver(eatenToday.caloriesKcal, dailyTargets.caloriesKcal)) {
+      return result("You've hit your calorie limit today", true);
     }
-
-    if (isOverLimit(eatenToday.carbsG, dailyTargets.carbsG)) {
-      return withDowngradeRule("You're over your carb goal today", true);
+    if (isOver(eatenToday.carbsG, dailyTargets.carbsG)) {
+      return result("You're over your carb goal today", true);
     }
-
-    if (
-      mealsRemainingAfter >= 1 &&
-      exceedsRemainder(dish.nutrition.caloriesKcal, remaining.caloriesKcal)
-    ) {
-      return withDowngradeRule('Takes up most of your remaining calories', true);
+    if (exceedsRemainder(nut.caloriesKcal, remaining.caloriesKcal) && mealsLeft >= 1) {
+      return result('Takes up most of your remaining calories', true);
     }
-
-    if (
-      mealsRemainingAfter >= 1 &&
-      exceedsRemainder(dish.nutrition.carbsG, remaining.carbsG)
-    ) {
-      return withDowngradeRule('Too many carbs for the rest of your day', true);
+    if (exceedsRemainder(nut.carbsG, remaining.carbsG) && mealsLeft >= 1) {
+      return result('Too many carbs for the rest of your day', true);
     }
-
-    if (
-      eatenToday.proteinG < 0.4 * dailyTargets.proteinG &&
-      dish.nutrition.proteinG >= 25
-    ) {
-      return withDowngradeRule('Helps hit your protein goal', false);
+    if (eatenToday.proteinG < 0.4 * dailyTargets.proteinG && nut.proteinG >= 25) {
+      return result('Helps hit your protein goal', false);
     }
-
-    return withDowngradeRule(undefined, false);
+    return { contextNote: undefined, shouldDowngrade: false };
   }
 
   if (goal === 'Gain muscle') {
-    if (isOverLimit(eatenToday.caloriesKcal, dailyTargets.caloriesKcal)) {
-      // Hard limit - keep active even for last meal.
-      return { contextNote: "You've hit your calorie limit today", shouldDowngrade: true };
+    if (isOver(eatenToday.caloriesKcal, dailyTargets.caloriesKcal)) {
+      return result("You've hit your calorie limit today", true);
     }
-
-    // Protein floor - keep active even for last meal.
-    if (dish.nutrition.proteinG < 20) {
-      return { contextNote: 'Low protein — not ideal for muscle gain', shouldDowngrade: true };
+    if (isOver(eatenToday.carbsG, dailyTargets.carbsG) && last) {
+      return { contextNote: "You've had enough carbs today", shouldDowngrade: false };
     }
-
-    if (
-      lastMeal &&
-      isOverLimit(eatenToday.carbsG, dailyTargets.carbsG)
-    ) {
-      return withDowngradeRule("You've had enough carbs today", false);
+    if (exceedsRemainder(nut.caloriesKcal, remaining.caloriesKcal) && mealsLeft >= 1) {
+      return result('Takes up most of your remaining calories', true);
     }
-
-    if (
-      mealsRemainingAfter >= 1 &&
-      exceedsRemainder(dish.nutrition.caloriesKcal, remaining.caloriesKcal)
-    ) {
-      return withDowngradeRule('Takes up most of your remaining calories', true);
+    if (eatenToday.proteinG < 0.4 * dailyTargets.proteinG && last && nut.proteinG >= 30) {
+      return { contextNote: 'You need more protein today — great pick', shouldDowngrade: false };
     }
-
-    const proteinUndereaten = eatenToday.proteinG < 0.4 * dailyTargets.proteinG;
-    if (
-      proteinUndereaten &&
-      lastMeal &&
-      dish.nutrition.proteinG >= 30
-    ) {
-      return withDowngradeRule('You need more protein today — great pick', false);
+    if (eatenToday.proteinG < 0.4 * dailyTargets.proteinG && nut.proteinG >= 30) {
+      return { contextNote: 'You need more protein today — great pick', shouldDowngrade: false };
     }
-
-    if (
-      proteinUndereaten &&
-      dish.nutrition.proteinG >= 30
-    ) {
-      return withDowngradeRule('You need more protein today — great pick', false);
-    }
-
-    return withDowngradeRule(undefined, false);
+    return { contextNote: undefined, shouldDowngrade: false };
   }
 
   if (goal === 'Maintain weight') {
-    if (isOverLimit(eatenToday.caloriesKcal, dailyTargets.caloriesKcal)) {
-      return { contextNote: "You've hit your calorie limit today", shouldDowngrade: true };
+    if (isOver(eatenToday.caloriesKcal, dailyTargets.caloriesKcal)) {
+      return result("You've hit your calorie limit today", true);
     }
-
-    if (
-      mealsRemainingAfter >= 1 &&
-      exceedsRemainder(dish.nutrition.caloriesKcal, remaining.caloriesKcal)
-    ) {
-      return withDowngradeRule('Takes up most of your remaining calories', true);
+    if (exceedsRemainder(nut.caloriesKcal, remaining.caloriesKcal) && mealsLeft >= 1) {
+      return result('Takes up most of your remaining calories', true);
     }
-
-    return withDowngradeRule(undefined, false);
+    return { contextNote: undefined, shouldDowngrade: false };
   }
 
   if (goal === 'Eat healthier') {
-    if (isOverLimit(eatenToday.caloriesKcal, dailyTargets.caloriesKcal)) {
-      return { contextNote: "You've hit your calorie limit today", shouldDowngrade: true };
+    if (nut.caloriesKcal > 800) {
+      return result('Quite large — better as your one main meal', true);
     }
-
-    // Downgrade low-protein dishes regardless of last meal.
-    if (dish.nutrition.proteinG < 18) {
-      return { contextNote: 'Low protein — add a protein source', shouldDowngrade: true };
-    }
-
-    if (
-      mealsRemainingAfter >= 1 &&
-      exceedsRemainder(dish.nutrition.caloriesKcal, remaining.caloriesKcal)
-    ) {
-      return withDowngradeRule('Takes up most of your remaining calories', true);
-    }
-
-    return withDowngradeRule(undefined, false);
+    return { contextNote: undefined, shouldDowngrade: false };
   }
 
-  if (dish.nutrition.caloriesKcal > 800) {
-    return withDowngradeRule('Quite large — better as your one main meal', true);
-  }
-
-  return withDowngradeRule(undefined, false);
+  return { contextNote: undefined, shouldDowngrade: false };
 }

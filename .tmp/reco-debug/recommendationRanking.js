@@ -125,15 +125,12 @@ function qualityBonusAndPenalty(flags) {
     let penalty = 0;
     if (f.wholeFood) {
         bonus += 8;
-        qualityReasons.push('Whole-food option compared with other choices.');
     }
     if (f.veggieForward) {
         bonus += 7;
-        qualityReasons.push('Veggie-forward option for a more balanced day.');
     }
     if (f.leanProtein) {
         bonus += 6;
-        qualityReasons.push('Lean protein support for your goal.');
     }
     if (f.fried) {
         penalty += 10;
@@ -217,8 +214,15 @@ function deriveDislikeReasons(dislikes) {
     }
     return ['Contains disliked ingredient and not realistically removable'];
 }
+function hasSevereQualityRisk(qualityReasons) {
+    return qualityReasons.some((reason) => reason.includes('Fried option') ||
+        reason.includes('Sugary drink') ||
+        reason.includes('Dessert-type option') ||
+        reason.includes('Heavily processed'));
+}
 function determineSection(params) {
     const { scoreResult, firstMealFlex } = params;
+    const hasSevereRisk = hasSevereQualityRisk(scoreResult.qualityReasons);
     if (scoreResult.hardConflictReasons.length > 0)
         return 'avoid';
     if (scoreResult.allergenReasons.some((reason) => reason.startsWith('Contains ')))
@@ -228,7 +232,7 @@ function determineSection(params) {
     }
     if (scoreResult.softPressureReasons.length > 0 ||
         scoreResult.proteinReasons.length > 0 ||
-        scoreResult.qualityReasons.length > 0 ||
+        hasSevereRisk ||
         scoreResult.allergenReasons.includes('Allergen unclear - ask staff')) {
         return 'caution';
     }
@@ -308,21 +312,21 @@ function scoreDish(ctx, dish) {
     if (macros.protein < floor && remainingProteinRatio > 0.35) {
         proteinReasons.push('Low protein for your goal. Add protein later today.');
     }
-    if (macros.protein >= floor + 8) {
-        proteinReasons.push('Good protein for your goal.');
-    }
     if (!feasibility.ok) {
-        if (feasibility.caloriesPerMealLeftAfter < 180) {
-            hardConflictReasons.push('Would leave too little calories for remaining meals.');
-        }
-        else if (feasibility.caloriesPerMealLeftAfter < 300) {
-            softPressureReasons.push('Would leave low calories per remaining meal.');
-        }
-        if (!ctx.firstMealFlex && feasibility.proteinPerMealNeededAfter > (ctx.goal === 'Gain muscle' ? 72 : 62)) {
-            if (feasibility.proteinPerMealNeededAfter > (ctx.goal === 'Gain muscle' ? 92 : 78)) {
-                hardConflictReasons.push('Protein requirement becomes too high for remaining meals.');
+        // Special-case: if this is effectively the first and only meal window left
+        // (e.g., user's first meal at dinner), do not demote high-protein gain-muscle picks
+        // by post-pick "remaining meals" feasibility math.
+        const skipPostPickFeasibilityForLateFirstMuscleMeal = ctx.goal === 'Gain muscle' &&
+            ctx.remainingMeals <= 1 &&
+            ctx.dailyState.mealsLoggedCount === 0;
+        if (!skipPostPickFeasibilityForLateFirstMuscleMeal) {
+            if (feasibility.caloriesPerMealLeftAfter < 180) {
+                hardConflictReasons.push('Would leave too little calories for remaining meals.');
             }
-            else {
+            else if (feasibility.caloriesPerMealLeftAfter < 300) {
+                softPressureReasons.push('Would leave low calories per remaining meal.');
+            }
+            if (!ctx.firstMealFlex && feasibility.proteinPerMealNeededAfter > (ctx.goal === 'Gain muscle' ? 72 : 62)) {
                 softPressureReasons.push('Low protein for your remaining budget. Add protein later today.');
             }
         }
@@ -498,11 +502,12 @@ function rankExtractedDishes(params) {
             return b.score - a.score;
         return (b.dish.confidencePercent ?? 0) - (a.dish.confidencePercent ?? 0);
     });
-    const top = sorted.filter((item) => item.section === 'top');
-    const caution = sorted.filter((item) => item.section === 'caution');
-    const avoid = sorted.filter((item) => item.section === 'avoid');
+    const sectionAdjusted = sorted;
+    const top = sectionAdjusted.filter((item) => item.section === 'top');
+    const caution = sectionAdjusted.filter((item) => item.section === 'caution');
+    const avoid = sectionAdjusted.filter((item) => item.section === 'avoid');
     return {
-        ranked: sorted,
+        ranked: sectionAdjusted,
         top,
         caution,
         avoid,

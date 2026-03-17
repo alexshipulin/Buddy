@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { RootStackParamList } from '../app/navigation/types';
 import { ALLERGY_OPTIONS, Allergy, DietaryPreference, Goal } from '../domain/models';
 import { appPrefsRepo, userRepo } from '../services/container';
@@ -14,34 +14,24 @@ import { appTheme } from '../design/theme';
 import { spec } from '../design/spec';
 import { typography } from '../ui/typography';
 
+const DISLIKES_OPTIONS = [
+  'Spicy', 'Avocado', 'Coriander', 'Mushrooms', 'Onions',
+  'Garlic', 'Olives', 'Seafood', 'Mayonnaise', 'Tomatoes',
+];
+
 type Props = NativeStackScreenProps<RootStackParamList, 'DietaryProfile'>;
 const preferences: DietaryPreference[] = ['Vegan or vegetarian', 'Pescatarian', 'Semi-vegetarian', 'Gluten-free', 'Lactose-free', 'Keto', 'Paleo (whole foods)'];
 const goals: Goal[] = ['Lose fat', 'Maintain weight', 'Gain muscle', 'Eat healthier'];
-const POPULAR_DISLIKE_PINS: readonly string[] = [
-  'Spicy',
-  'Avocado',
-  'Coriander',
-  'Mushrooms',
-  'Onions',
-  'Garlic',
-  'Olives',
-  'Seafood',
-  'Mayonnaise',
-  'Tomatoes',
-];
-
-function normalizeDislikeKey(s: string): string {
-  return s.trim().toLowerCase();
-}
 
 export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const scrollPaddingBottom = getCTATotalHeight(insets.bottom) + spec.spacing[12] / 2;
   const [selectedPreferences, setSelectedPreferences] = React.useState<DietaryPreference[]>([]);
   const [selectedAllergies, setSelectedAllergies] = React.useState<Allergy[]>([]);
-  const [dislikes, setDislikes] = React.useState<string[]>([]);
-  const [dislikeInput, setDislikeInput] = React.useState('');
+  const [selectedDislikes, setSelectedDislikes] = React.useState<string[]>([]);
   const [selectedGoal, setSelectedGoal] = React.useState<Goal>('Maintain weight');
+  const toggleDislike = (v: string): void =>
+    setSelectedDislikes((p) => (p.includes(v) ? p.filter((x) => x !== v) : [...p, v]));
 
   React.useEffect(() => {
     void (async () => {
@@ -53,7 +43,7 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
           const allowed = user.allergies.filter((a) => ALLERGY_OPTIONS.includes(a));
           if (allowed.length) setSelectedAllergies(allowed);
         }
-        if (user.dislikes?.length) setDislikes(user.dislikes);
+        if (user.dislikes?.length) setSelectedDislikes(user.dislikes);
       }
     })();
   }, []);
@@ -61,42 +51,23 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
   const togglePref = (v: DietaryPreference): void => setSelectedPreferences((p) => (p.includes(v) ? p.filter((x) => x !== v) : [...p, v]));
   const toggleAllergy = (v: Allergy): void => setSelectedAllergies((p) => (p.includes(v) ? p.filter((x) => x !== v) : [...p, v]));
 
-  const addDislikeValue = React.useCallback((value: string): void => {
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    const key = normalizeDislikeKey(trimmed);
-    setDislikes((prev) => {
-      const existing = prev.find((d) => normalizeDislikeKey(d) === key);
-      if (existing) {
-        return prev.filter((d) => normalizeDislikeKey(d) !== key);
-      }
-      return [...prev, trimmed];
-    });
-  }, []);
-
-  const addDislike = (): void => {
-    addDislikeValue(dislikeInput);
-    setDislikeInput('');
-  };
-  const toggleDislikePin = (label: string): void => {
-    addDislikeValue(label);
-  };
-  const dislikePins = React.useMemo(() => {
-    const popularKeys = new Set(POPULAR_DISLIKE_PINS.map((pin) => normalizeDislikeKey(pin)));
-    const customPins = dislikes.filter((pin) => !popularKeys.has(normalizeDislikeKey(pin)));
-    return [...POPULAR_DISLIKE_PINS, ...customPins];
-  }, [dislikes]);
-
   const goHome = async (): Promise<void> => {
     await appPrefsRepo.markOnboardingCompleted();
     navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
   };
   const onSave = async (): Promise<void> => {
-    await userRepo.patchUser({
+    const user = (await userRepo.getUser()) ?? {
+      goal: 'Maintain weight' as Goal,
+      dietaryPreferences: [],
+      allergies: [],
+      dislikes: [],
+    };
+    await userRepo.saveUser({
+      ...user,
       goal: selectedGoal,
       dietaryPreferences: selectedPreferences,
       allergies: selectedAllergies,
-      dislikes,
+      dislikes: selectedDislikes,
     });
     await goHome();
   };
@@ -133,32 +104,19 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
             />
           ))}
         </View>
-        <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.2}>Dislikes</Text>
-        <View style={styles.dislikeRow}>
-          <TextInput
-            style={styles.dislikeInput}
-            placeholder="Add an ingredient you dislike"
-            placeholderTextColor={appTheme.colors.placeholder}
-            value={dislikeInput}
-            onChangeText={setDislikeInput}
-            onSubmitEditing={addDislike}
-            returnKeyType="done"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <Pressable style={styles.addDislikeBtn} onPress={addDislike}>
-            <Text style={styles.addDislikeBtnText}>Add</Text>
+        <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.2}>I don't like</Text>
+        <View style={styles.chipsWrap}>
+          <Pressable onPress={() => setSelectedDislikes([])}>
+            <Chip label="None" selected={selectedDislikes.length === 0} />
           </Pressable>
-        </View>
-        <View style={[styles.chipsWrap, styles.popularPinsWrap]}>
-          {dislikePins.map((label) => (
-            <Chip
-              key={label}
-              label={label}
-              selected={dislikes.some((d) => normalizeDislikeKey(d) === normalizeDislikeKey(label))}
-              onPress={() => toggleDislikePin(label)}
-            />
-          ))}
+          {DISLIKES_OPTIONS.map((item) => {
+            const selected = selectedDislikes.includes(item);
+            return (
+              <Pressable key={item} onPress={() => toggleDislike(item)}>
+                <Chip label={item} selected={selected} />
+              </Pressable>
+            );
+          })}
         </View>
         <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.2}>Diet preferences</Text>
         <View style={styles.chipsWrap}>
@@ -202,25 +160,4 @@ const styles = StyleSheet.create({
   subtitle: { ...typography.body, color: appTheme.colors.muted, marginTop: spec.spacing[8] },
   sectionTitle: { ...typography.h2, marginTop: spec.spacing[24] },
   chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spec.spacing[12] },
-  popularPinsWrap: { marginTop: spec.spacing[4] },
-  dislikeRow: { flexDirection: 'row', alignItems: 'center', gap: spec.spacing[8], marginTop: spec.spacing[4] },
-  dislikeInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: appTheme.colors.border,
-    borderRadius: spec.inputRadius,
-    paddingHorizontal: spec.inputPaddingX,
-    paddingVertical: spec.spacing[12],
-    fontSize: appTheme.typography.body.fontSize,
-    minHeight: spec.inputHeight,
-    color: appTheme.colors.textPrimary,
-  },
-  addDislikeBtn: {
-    minHeight: spec.inputHeight,
-    paddingHorizontal: spec.spacing[16],
-    justifyContent: 'center',
-    borderRadius: spec.inputRadius,
-    backgroundColor: appTheme.colors.ink,
-  },
-  addDislikeBtnText: { ...typography.bodySemibold, color: appTheme.colors.primaryText },
 });

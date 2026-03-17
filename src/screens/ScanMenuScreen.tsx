@@ -32,7 +32,10 @@ import {
 import { appPrefsRepo, dailyNutritionRepo, historyRepo, menuAnalysisProvider, trialRepo, userRepo } from '../services/container';
 import { useAppAlert } from '../ui/components/AppAlertProvider';
 import { abortInflight } from '../ai/inflight';
-import { buildAIDebugReport, buildAIDebugReportByAnalysisId } from '../ai/aiDebugLog';
+import {
+  buildAIDebugIncidentReportByAnalysisId,
+  buildAIDebugReport,
+} from '../ai/aiDebugLog';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScanMenu'>;
 
@@ -436,17 +439,10 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
       if (e instanceof DailyScanLimitReachedError) {
         setErrorMessage('Daily limit reached. You can scan one menu per day on Free plan.');
       } else if (e instanceof MenuAnalysisInvalidJsonError) {
-        if (__DEV__ && e.issues?.length) {
-          console.warn('[MenuScan] Validation issues:', e.issues);
-        }
         if (__DEV__ && e.raw) {
           console.warn('[MenuScan] Raw model output:', e.raw);
         }
-        const rawOrDetails = e.raw?.trim()
-          ? e.raw
-          : e.issues?.length
-            ? JSON.stringify({ issues: e.issues }, null, 2)
-            : e.message;
+        const rawOrDetails = e.raw?.trim() ? e.raw : e.message;
         setRawAiOutput(rawOrDetails || null);
         setRawAiModel(e.model || null);
         setErrorMessage(
@@ -692,16 +688,31 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
                 style={styles.copyErrorBtn}
                 onPress={() => {
                   void (async () => {
-                    const report = await buildAIDebugReportByAnalysisId(errorAnalysisId);
+                    const [user, targets, today] = await Promise.all([
+                      userRepo.getUser(),
+                      userRepo.getNutritionTargets(),
+                      dailyNutritionRepo.getToday(new Date()),
+                    ]);
+                    const report = await buildAIDebugIncidentReportByAnalysisId({
+                      analysisId: errorAnalysisId,
+                      context: {
+                        errorMessage,
+                        rawAiOutput,
+                        rawAiModel,
+                        user,
+                        targets,
+                        today,
+                      },
+                    });
                     await shareText(
                       report,
-                      `AI debug report #${errorAnalysisId}`,
-                      `AI debug report for scan #${errorAnalysisId} is ready to share.`
+                      `AI incident report #${errorAnalysisId}`,
+                      `AI incident report for scan #${errorAnalysisId} is ready to share.`
                     );
                   })();
                 }}
               >
-                <Text style={styles.copyErrorBtnText}>Share this scan logs</Text>
+                <Text style={styles.copyErrorBtnText}>Share this scan incident report</Text>
               </Pressable>
             ) : null}
             <Pressable

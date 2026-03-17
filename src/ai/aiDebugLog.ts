@@ -27,6 +27,34 @@ export type AIDebugEntry = {
   details?: Record<string, unknown>;
 };
 
+type IncidentContext = {
+  errorMessage?: string | null;
+  rawAiOutput?: string | null;
+  rawAiModel?: string | null;
+  user?: {
+    goal?: string;
+    dietaryPreferences?: string[];
+    allergies?: string[];
+    dislikes?: string[];
+  } | null;
+  targets?: {
+    caloriesKcal?: number;
+    proteinG?: number;
+    carbsG?: number;
+    fatG?: number;
+  } | null;
+  today?: {
+    dateKey?: string;
+    mealsLoggedCount?: number;
+    consumed?: {
+      calories?: number;
+      protein?: number;
+      carbs?: number;
+      fat?: number;
+    };
+  } | null;
+};
+
 type AIDebugLogsByAnalysis = {
   order: number[];
   byAnalysisId: Record<string, AIDebugEntry[]>;
@@ -210,6 +238,122 @@ function renderDebugReport(logs: AIDebugEntry[], title: string): string {
     }
     lines.push('');
   }
+  return lines.join('\n');
+}
+
+function stringifyCompact(value: unknown, maxLen = 600): string {
+  try {
+    const raw = JSON.stringify(value);
+    if (!raw) return '';
+    if (raw.length <= maxLen) return raw;
+    const omitted = raw.length - maxLen;
+    return `${raw.slice(0, maxLen)}…[truncated ${omitted} chars]`;
+  } catch {
+    return '[unserializable]';
+  }
+}
+
+function truncateText(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  const omitted = text.length - maxLen;
+  return `${text.slice(0, maxLen)}\n...[truncated ${omitted} chars]`;
+}
+
+function pickRequestSnapshot(logs: AIDebugEntry[]): Record<string, unknown> | null {
+  const requestPayload = logs.find((entry) => entry.stage === 'menu_analysis.request_payload');
+  const requestPrompt = logs.find((entry) => entry.stage === 'menu_analysis.request_prompt');
+  const runStart = logs.find((entry) => entry.stage === 'run.start');
+
+  if (!requestPayload && !requestPrompt && !runStart) return null;
+  return {
+    request_payload: requestPayload?.details ?? null,
+    request_prompt: requestPrompt?.details ?? null,
+    run_start: runStart?.details ?? null,
+  };
+}
+
+export async function buildAIDebugIncidentReportByAnalysisId(params: {
+  analysisId: number;
+  limit?: number;
+  context?: IncidentContext;
+}): Promise<string> {
+  const id = Math.max(0, Math.floor(params.analysisId));
+  const logs = await getAIDebugLogsByAnalysisId(id, params.limit ?? 500);
+  const chronological = [...logs].reverse();
+  const lines: string[] = [];
+  const context = params.context ?? null;
+
+  lines.push(`Buddy AI incident report | analysisId=${id}`);
+  lines.push(`Generated: ${new Date().toISOString()}`);
+  lines.push(`Entries: ${logs.length}`);
+  lines.push('');
+
+  lines.push('=== USER CONTEXT ===');
+  lines.push(
+    stringifyCompact({
+      goal: context?.user?.goal ?? null,
+      dietaryPreferences: context?.user?.dietaryPreferences ?? [],
+      allergies: context?.user?.allergies ?? [],
+      dislikes: context?.user?.dislikes ?? [],
+    })
+  );
+  lines.push('');
+
+  lines.push('=== TODAY NUTRITION ===');
+  lines.push(
+    stringifyCompact({
+      dateKey: context?.today?.dateKey ?? null,
+      mealsLoggedCount: context?.today?.mealsLoggedCount ?? null,
+      consumed: context?.today?.consumed ?? null,
+      targets: context?.targets ?? null,
+    })
+  );
+  lines.push('');
+
+  lines.push('=== AI REQUEST SNAPSHOT ===');
+  lines.push(stringifyCompact(pickRequestSnapshot(chronological), 2400));
+  lines.push('');
+
+  lines.push('=== AI RESPONSE SNAPSHOT ===');
+  lines.push(`rawModel: ${context?.rawAiModel ?? '-'}`);
+  lines.push(`uiErrorMessage: ${context?.errorMessage ?? '-'}`);
+  const raw = (context?.rawAiOutput ?? '').trim();
+  if (raw) {
+    lines.push(`rawLength: ${raw.length}`);
+    lines.push('rawOutput:');
+    lines.push(truncateText(raw, 8000));
+  } else {
+    lines.push('rawOutput: -');
+  }
+  lines.push('');
+
+  lines.push('=== ERROR / WARN EVENTS ===');
+  const errorWarn = chronological.filter((entry) => entry.level !== 'info');
+  if (errorWarn.length === 0) {
+    lines.push('none');
+  } else {
+    for (const entry of errorWarn) {
+      lines.push(
+        `${entry.createdAt} | ${entry.level.toUpperCase()} | ${entry.task} | ${entry.stage} | ${entry.message}`
+      );
+      lines.push(
+        `meta: model=${entry.model ?? '-'} status=${entry.status ?? '-'} durationMs=${entry.durationMs ?? '-'}`
+      );
+      if (entry.details && Object.keys(entry.details).length) {
+        lines.push(`details: ${stringifyCompact(entry.details, 1000)}`);
+      }
+      lines.push('');
+    }
+  }
+
+  lines.push('=== STAGE TIMELINE (compact) ===');
+  const timeline = chronological.slice(-120);
+  for (const entry of timeline) {
+    lines.push(
+      `${entry.createdAt} | ${entry.level.toUpperCase()} | ${entry.stage} | model=${entry.model ?? '-'} | status=${entry.status ?? '-'}`
+    );
+  }
+
   return lines.join('\n');
 }
 

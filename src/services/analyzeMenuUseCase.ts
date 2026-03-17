@@ -82,11 +82,10 @@ export async function analyzeMenuUseCase(images: string[], deps: Deps): Promise<
         if (!canScan) throw new DailyScanLimitReachedError();
       }
 
-      const result = await deps.menuProvider.analyzeMenu(images, user, signal, {
+      const result = await deps.menuProvider.analyzeMenu(images, user, {
+        historyRepo: deps.historyRepo,
         analysisId,
         sessionId,
-        targets,
-        dailyState,
       });
       const resultWithAnalysisId = { ...result, analysisId };
       await deps.historyRepo.saveScanResult(resultWithAnalysisId);

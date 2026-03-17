@@ -44,6 +44,23 @@ This project uses Google Gemini API securely via environment variables.
      npm run ai-debug:scan -- 30
      ```
 
+6. **Optional: read AI debug logs directly from Firestore by scan id:**
+   - First run (binds and saves your device scope for future quick reads):
+     ```bash
+     npm run ai-debug:firestore-scan -- 30 --scope device_device_1773738842039_x9tp9f
+     ```
+   - Next runs (scan id only):
+     ```bash
+     npm run ai-debug:firestore-scan -- 30
+     ```
+   - Output as JSON:
+     ```bash
+     npm run ai-debug:firestore-scan -- 30 --json
+     ```
+   - Notes:
+     - Saved scope is stored at `.tmp/ai_debug_firestore_reader.json`
+     - You can override scope via env: `AI_DEBUG_FIRESTORE_SCOPE=device_xxx`
+
 ## Architecture
 
 - **Centralized AI Service**: All Gemini API calls go through `src/services/aiService.ts`

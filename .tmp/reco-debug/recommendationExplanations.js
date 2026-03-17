@@ -25,7 +25,10 @@ function buildDeterministicExplanation(ctx) {
     }
     const allergen = firstOf(ctx.allergenReasons);
     if (allergen) {
-        return { explanation: allergen, quickFix: 'Ask staff to confirm ingredients.' };
+        return {
+            explanation: allergen,
+            quickFix: allergen === 'No listed allergen' ? null : 'Ask staff to confirm ingredients.',
+        };
     }
     const dislike = firstOf(ctx.dislikeReasons);
     if (dislike) {

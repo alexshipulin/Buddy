@@ -1,6 +1,8 @@
 import { MenuScanResult } from '../domain/models';
 import { createId } from '../utils/id';
 import * as FileSystem from 'expo-file-system/legacy';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import { Image as RNImage } from 'react-native';
 import { getApiKey, runWithFallback, sanitizeJsonText } from '../ai/geminiClient';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
@@ -61,6 +63,132 @@ export async function uriToBase64(uri: string): Promise<string | null> {
     }
   }
   return uri;
+}
+
+export type PreparedVisionImage = {
+  base64: string;
+  mimeType: string;
+  wasCompressed: boolean;
+  originalWidth?: number | null;
+  outputWidth?: number | null;
+  compressionQuality?: number | null;
+};
+
+function getImageWidth(uri: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    RNImage.getSize(
+      uri,
+      (width) => resolve(width),
+      () => resolve(null)
+    );
+  });
+}
+
+function getDataUriMimeType(uri: string): string | null {
+  if (!uri.startsWith('data:')) return null;
+  const header = uri.slice(5, uri.indexOf(','));
+  const semicolonIdx = header.indexOf(';');
+  const mime = semicolonIdx >= 0 ? header.slice(0, semicolonIdx) : header;
+  return mime || null;
+}
+
+/**
+ * Prepares image bytes for vision models:
+ * - converts to JPEG
+ * - applies adaptive compression
+ * - downsizes wide images while keeping small text readable
+ */
+export async function prepareImageForVision(
+  uri: string,
+  options?: { maxWidth?: number; minWidth?: number; compress?: number; targetBase64Len?: number }
+): Promise<PreparedVisionImage | null> {
+  const maxWidth = options?.maxWidth ?? 1600;
+  const minWidth = Math.min(options?.minWidth ?? 1280, maxWidth);
+  const baseCompress = options?.compress ?? 0.68;
+  const targetBase64Len = options?.targetBase64Len ?? 900_000;
+
+  const clampCompress = (value: number): number => {
+    if (value < 0.45) return 0.45;
+    if (value > 0.9) return 0.9;
+    return value;
+  };
+
+  const buildAttempts = (effectiveMaxWidth: number): Array<{ width: number; compress: number }> => {
+    const attempts: Array<{ width: number; compress: number }> = [
+      { width: effectiveMaxWidth, compress: clampCompress(baseCompress) },
+      { width: Math.max(minWidth, Math.round(effectiveMaxWidth * 0.92)), compress: clampCompress(baseCompress - 0.06) },
+      { width: Math.max(minWidth, Math.round(effectiveMaxWidth * 0.84)), compress: clampCompress(baseCompress - 0.1) },
+      { width: minWidth, compress: clampCompress(baseCompress - 0.14) },
+    ];
+
+    const deduped: Array<{ width: number; compress: number }> = [];
+    const seen = new Set<string>();
+    for (const a of attempts) {
+      const key = `${a.width}_${a.compress.toFixed(2)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(a);
+    }
+    return deduped;
+  };
+
+  if (uri.startsWith('data:')) {
+    const base64 = uriToBase64(uri);
+    const mime = getDataUriMimeType(uri) ?? 'image/jpeg';
+    const resolved = await base64;
+    return resolved ? { base64: resolved, mimeType: mime, wasCompressed: false } : null;
+  }
+
+  if (uri.startsWith('file://')) {
+    try {
+      const originalWidth = await getImageWidth(uri);
+      const effectiveMaxWidth = originalWidth ? Math.min(originalWidth, maxWidth) : maxWidth;
+      const attempts = buildAttempts(effectiveMaxWidth);
+
+      let best: PreparedVisionImage | null = null;
+      let bestLen = Number.POSITIVE_INFINITY;
+
+      for (const attempt of attempts) {
+        const actions = originalWidth && originalWidth > attempt.width ? [{ resize: { width: attempt.width } as const }] : [];
+        const manipulated = await manipulateAsync(uri, actions, {
+          base64: true,
+          compress: attempt.compress,
+          format: SaveFormat.JPEG,
+        });
+        if (!manipulated.base64) continue;
+
+        const len = manipulated.base64.length;
+        const candidate: PreparedVisionImage = {
+          base64: manipulated.base64,
+          mimeType: 'image/jpeg',
+          wasCompressed: true,
+          originalWidth,
+          outputWidth: manipulated.width ?? attempt.width,
+          compressionQuality: attempt.compress,
+        };
+
+        if (len < bestLen) {
+          best = candidate;
+          bestLen = len;
+        }
+
+        if (len <= targetBase64Len) {
+          // First candidate that reaches target keeps the best readability-quality tradeoff.
+          return candidate;
+        }
+      }
+
+      if (best) {
+        return best;
+      }
+    } catch {
+      // fallback below
+    }
+  }
+
+  const fallback = await uriToBase64(uri);
+  if (!fallback) return null;
+  return { base64: fallback, mimeType: 'image/jpeg', wasCompressed: false };
 }
 
 // ── Legacy analyzeMenu (kept for backwards compat, not used by scan flow) ─────

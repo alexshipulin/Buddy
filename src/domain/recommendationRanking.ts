@@ -397,6 +397,10 @@ export function scoreDish(ctx: RankingContext, dish: ExtractedDish): DishScoreRe
   const hardConflictReasons: string[] = [];
   const softPressureReasons: string[] = [];
   const proteinReasons: string[] = [];
+  const skipPostPickFeasibilityForLateFirstMuscleMeal =
+    ctx.goal === 'Gain muscle' &&
+    ctx.remainingMeals <= 1 &&
+    ctx.dailyState.mealsLoggedCount === 0;
 
   const containsAllergens = containsAllergenConflict(
     dish.allergenSignals,
@@ -443,13 +447,15 @@ export function scoreDish(ctx: RankingContext, dish: ExtractedDish): DishScoreRe
   }
 
   if (!feasibility.ok) {
-    if (feasibility.caloriesPerMealLeftAfter < 180) {
-      hardConflictReasons.push('Would leave too little calories for remaining meals.');
-    } else if (feasibility.caloriesPerMealLeftAfter < 300) {
-      softPressureReasons.push('Would leave low calories per remaining meal.');
-    }
-    if (!ctx.firstMealFlex && feasibility.proteinPerMealNeededAfter > (ctx.goal === 'Gain muscle' ? 72 : 62)) {
-      softPressureReasons.push('Low protein for your remaining budget. Add protein later today.');
+    if (!skipPostPickFeasibilityForLateFirstMuscleMeal) {
+      if (feasibility.caloriesPerMealLeftAfter < 180) {
+        hardConflictReasons.push('Would leave too little calories for remaining meals.');
+      } else if (feasibility.caloriesPerMealLeftAfter < 300) {
+        softPressureReasons.push('Would leave low calories per remaining meal.');
+      }
+      if (!ctx.firstMealFlex && feasibility.proteinPerMealNeededAfter > (ctx.goal === 'Gain muscle' ? 72 : 62)) {
+        softPressureReasons.push('Low protein for your remaining budget. Add protein later today.');
+      }
     }
   }
 
@@ -485,7 +491,7 @@ export function scoreDish(ctx: RankingContext, dish: ExtractedDish): DishScoreRe
 
   return {
     score,
-    feasible: feasibility.ok,
+    feasible: skipPostPickFeasibilityForLateFirstMuscleMeal ? true : feasibility.ok,
     feasibility,
     pressure,
     hardConflictReasons,

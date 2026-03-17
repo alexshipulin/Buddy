@@ -43,6 +43,11 @@ const USER_AUTH_KEY = 'buddy_user_auth_state';
 const DEVICE_SCOPE_KEY = 'buddy_ai_debug_remote_scope_v1';
 const REMOTE_MAX_FETCH_LIMIT = 3000;
 const REMOTE_FAIL_DISABLE_MS = 2 * 60 * 1000;
+const REMOTE_MAX_DETAIL_DEPTH = 5;
+const REMOTE_MAX_DETAIL_KEYS = 32;
+const REMOTE_MAX_DETAIL_ARRAY = 24;
+const REMOTE_MAX_DETAIL_STRING = 320;
+const REMOTE_MAX_DETAIL_JSON = 6000;
 
 let firestoreContextCache: FirestoreContext | null | undefined;
 let consecutiveWriteFailures = 0;
@@ -141,6 +146,70 @@ function pruneUndefinedDeep(value: unknown): unknown {
   return value;
 }
 
+function truncateText(value: string, maxLen: number): string {
+  if (value.length <= maxLen) return value;
+  const omitted = value.length - maxLen;
+  return `${value.slice(0, maxLen)}…[truncated ${omitted} chars]`;
+}
+
+function compactForRemote(value: unknown, depth = 0): unknown {
+  if (depth > REMOTE_MAX_DETAIL_DEPTH) {
+    return '[truncated: max depth reached]';
+  }
+  if (typeof value === 'string') {
+    return truncateText(value, REMOTE_MAX_DETAIL_STRING);
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'boolean' || value === null) return value;
+  if (value === undefined) return undefined;
+
+  if (Array.isArray(value)) {
+    const limited = value.slice(0, REMOTE_MAX_DETAIL_ARRAY).map((item) => compactForRemote(item, depth + 1));
+    if (value.length > REMOTE_MAX_DETAIL_ARRAY) {
+      limited.push(`[truncated: ${value.length - REMOTE_MAX_DETAIL_ARRAY} more items]`);
+    }
+    return limited;
+  }
+
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>);
+    const limited = entries.slice(0, REMOTE_MAX_DETAIL_KEYS);
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of limited) {
+      const normalized = compactForRemote(v, depth + 1);
+      if (normalized !== undefined) out[k] = normalized;
+    }
+    if (entries.length > REMOTE_MAX_DETAIL_KEYS) {
+      out.__truncatedKeys = entries.length - REMOTE_MAX_DETAIL_KEYS;
+    }
+    return out;
+  }
+
+  return String(value);
+}
+
+function compactDetailsForRemote(value: unknown): unknown {
+  const compacted = compactForRemote(pruneUndefinedDeep(value));
+  if (compacted === undefined) return null;
+  try {
+    const encoded = JSON.stringify(compacted);
+    if (!encoded || encoded.length <= REMOTE_MAX_DETAIL_JSON) return compacted;
+    return {
+      __truncated: true,
+      reason: 'details_json_too_large',
+      originalLength: encoded.length,
+      preview: truncateText(encoded, REMOTE_MAX_DETAIL_JSON),
+    };
+  } catch {
+    return {
+      __truncated: true,
+      reason: 'details_not_serializable',
+    };
+  }
+}
+
 function serializeForFirestore(entry: AIDebugEntry): Record<string, unknown> {
   return {
     id: entry.id,
@@ -154,7 +223,7 @@ function serializeForFirestore(entry: AIDebugEntry): Record<string, unknown> {
     model: entry.model ?? null,
     status: typeof entry.status === 'number' ? entry.status : null,
     durationMs: typeof entry.durationMs === 'number' ? entry.durationMs : null,
-    details: pruneUndefinedDeep(entry.details ?? null) ?? null,
+    details: compactDetailsForRemote(entry.details ?? null),
     syncedAt: new Date().toISOString(),
   };
 }

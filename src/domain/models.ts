@@ -111,6 +111,13 @@ export type DishPick = {
   estimatedFatG?: number | null;
 };
 
+export type PinVariant = 'positive' | 'risk';
+
+export type DishPin = {
+  label: string;
+  variant: PinVariant;
+};
+
 export type MenuScanResult = {
   id: string;
   /** Sequential local analysis id used for debugging and support. */
@@ -135,11 +142,13 @@ export type DishRecommendation = {
   name: string;
   reasonShort: string;
   contextNote?: string;
-  tags: string[];
-  nutrition?: { caloriesKcal: number; proteinG: number; carbsG: number; fatG: number };
-  macros?: MacroTotals;
-  matchPercent?: number;
-  warningLabel?: string;
+  pins: DishPin[];
+  nutrition?: {
+    caloriesKcal: number;
+    proteinG: number;
+    carbsG: number;
+    fatG: number;
+  };
 };
 export type MealEntry = {
   id: string;

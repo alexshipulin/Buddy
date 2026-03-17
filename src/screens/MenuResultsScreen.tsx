@@ -5,16 +5,23 @@ import React from 'react';
 import { ActionSheetIOS, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../app/navigation/types';
-import { DishPick, MacroTotals, MenuScanResult, NutritionTargets, UserProfile } from '../domain/models';
-import { USE_MOCK_DATA } from '../config/local';
-import { mockTopPicksResult } from '../mock/topPicks';
+import {
+  DishPick,
+  DishPin,
+  DishRecommendation,
+  MacroTotals,
+  MenuScanResult,
+  NutritionTargets,
+  UserProfile,
+} from '../domain/models';
 import { addMealUseCase } from '../services/addMealUseCase';
 import { computePersonalTargets } from '../services/computePersonalTargets';
 import { computeTodayMacrosUseCase } from '../services/computeTodayMacrosUseCase';
 import { chatRepo, historyRepo, userRepo } from '../services/container';
 import { createId } from '../utils/id';
+import { Chip } from '../components/Chip';
 import { Card } from '../ui/components/Card';
-import { Chip } from '../ui/components/Chip';
+import { Chip as UiChip } from '../ui/components/Chip';
 import { MacroBar } from '../ui/components/MacroBar';
 import { Screen } from '../ui/components/Screen';
 import { appTheme } from '../design/theme';
@@ -52,6 +59,21 @@ function formatNumber(value: number | null | undefined): string {
 function formatList(items: string[] | undefined): string {
   if (!items || items.length === 0) return 'none';
   return items.join(', ');
+}
+
+function formatPinsLine(items: unknown): string | null {
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const labels = items
+    .map((item) => {
+      if (typeof item === 'string') return item;
+      if (item && typeof item === 'object' && 'label' in item) {
+        const label = (item as DishPin).label;
+        return typeof label === 'string' ? label : null;
+      }
+      return null;
+    })
+    .filter((label): label is string => !!label);
+  return labels.length > 0 ? labels.join(', ') : null;
 }
 
 function formatMacroProgress(params: {
@@ -124,7 +146,8 @@ function formatDishLine(section: 'TOP' | 'CAUTION' | 'AVOID', index: number, dis
     `confidence: ${formatNumber(dish.confidencePercent)}%`,
   ];
   if (contextNote) lines.push(`contextNote: ${contextNote}`);
-  if (dish.pins?.length) lines.push(`pins: ${dish.pins.join(', ')}`);
+  const pinsLine = formatPinsLine((dish as unknown as { pins?: unknown[] }).pins);
+  if (pinsLine) lines.push(`pins: ${pinsLine}`);
   if (dish.riskPins?.length) lines.push(`riskPins: ${dish.riskPins.join(', ')}`);
   if (dish.dietBadges?.length) lines.push(`dietBadges: ${dish.dietBadges.join(', ')}`);
   if (dish.quickFix) lines.push(`quickFix: ${dish.quickFix}`);
@@ -178,6 +201,85 @@ function buildScanCopyText(params: {
   return lines.join('\n').trim();
 }
 
+function normalizePins(
+  rawPins: unknown,
+  fallbackVariant: DishPin['variant'] = 'positive'
+): DishPin[] {
+  if (!Array.isArray(rawPins)) return [];
+  return rawPins
+    .map((pin) => {
+      if (pin && typeof pin === 'object' && 'label' in pin && 'variant' in pin) {
+        const p = pin as DishPin;
+        if (
+          typeof p.label === 'string' &&
+          (p.variant === 'positive' || p.variant === 'risk' || p.variant === 'neutral')
+        ) {
+          return p;
+        }
+      }
+      if (typeof pin === 'string') {
+        return { label: pin, variant: fallbackVariant } as DishPin;
+      }
+      return null;
+    })
+    .filter((pin): pin is DishPin => !!pin)
+    .slice(0, 4);
+}
+
+function toDishRecommendation(
+  item: DishPick,
+  section: 'top' | 'caution' | 'avoid'
+): DishRecommendation {
+  const fallbackVariant: DishPin['variant'] = section === 'top' ? 'positive' : 'risk';
+  const fromPins = normalizePins(item.pins as unknown, fallbackVariant);
+  const fromRiskPins = normalizePins(item.riskPins as unknown, 'risk');
+  const pins = fromPins.length > 0 ? fromPins : fromRiskPins;
+
+  return {
+    name: item.name,
+    reasonShort: item.shortReason,
+    contextNote: getContextNote(item),
+    pins,
+    nutrition: {
+      caloriesKcal: item.estimatedCalories ?? 0,
+      proteinG: item.estimatedProteinG ?? 0,
+      carbsG: item.estimatedCarbsG ?? 0,
+      fatG: item.estimatedFatG ?? 0,
+    },
+  };
+}
+
+function DishRow({
+  item,
+}: {
+  item: DishRecommendation;
+}): React.JSX.Element {
+  return (
+    <Card style={styles.dishCard}>
+      <Text style={styles.dishName}>{item.name}</Text>
+      <Text style={styles.reason}>{item.reasonShort}</Text>
+      {item.contextNote ? (
+        <Text style={styles.contextNote}>{item.contextNote}</Text>
+      ) : null}
+      <MacroBar
+        calories={item.nutrition.caloriesKcal}
+        proteinG={item.nutrition.proteinG}
+        carbsG={item.nutrition.carbsG}
+        fatG={item.nutrition.fatG}
+      />
+      <View style={styles.pins}>
+        {item.pins.slice(0, 4).map((pin) => (
+          <Chip
+            key={`${item.name}_${pin.label}`}
+            label={pin.label}
+            variant={pin.variant}
+          />
+        ))}
+      </View>
+    </Card>
+  );
+}
+
 function TopPickCard({
   item,
   onTakeDish,
@@ -217,10 +319,10 @@ function TopPickCard({
       {(hasPins || hasDietBadges) && (
         <View style={styles.chipsRow}>
           {item.pins?.map((pin) => (
-            <Chip key={`${item.name}_pin_${pin}`} label={pin} small />
+            <UiChip key={`${item.name}_pin_${pin}`} label={pin} small />
           ))}
           {item.dietBadges?.map((badge) => (
-            <Chip key={`${item.name}_diet_${badge}`} label={badge} small />
+            <UiChip key={`${item.name}_diet_${badge}`} label={badge} small />
           ))}
         </View>
       )}
@@ -285,7 +387,7 @@ function CautionCard({
       {(item.riskPins?.length ?? 0) > 0 && (
         <View style={styles.riskPinsRow}>
           {item.riskPins?.slice(0, 3).map((pin) => (
-            <Chip key={`${item.name}_caution_risk_${pin}`} label={pin} small variant="warning" />
+            <UiChip key={`${item.name}_caution_risk_${pin}`} label={pin} small variant="warning" />
           ))}
         </View>
       )}
@@ -335,7 +437,7 @@ function AvoidCard({
       {(item.riskPins?.length ?? 0) > 0 && (
         <View style={styles.riskPinsRow}>
           {item.riskPins?.slice(0, 3).map((pin) => (
-            <Chip key={`${item.name}_avoid_risk_${pin}`} label={pin} small variant="danger" />
+            <UiChip key={`${item.name}_avoid_risk_${pin}`} label={pin} small variant="danger" />
           ))}
         </View>
       )}
@@ -409,7 +511,7 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
         setResult(latestResult);
         return;
       }
-      setResult(USE_MOCK_DATA ? mockTopPicksResult : null);
+      setResult(null);
     })();
   }, [route.params?.resultId]);
 
@@ -563,11 +665,9 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
                 <View style={styles.cardsColumn}>
                   {result.topPicks.length > 0 ? (
                     result.topPicks.map((item) => (
-                      <TopPickCard
+                      <DishRow
                         key={`t_${item.name}`}
-                        item={item}
-                        onTakeDish={(dish) => void handleTakeDish(dish, 'top')}
-                        onAskBuddy={() => navigation.navigate('Chat', { resultId: result.id })}
+                        item={toDishRecommendation(item, 'top')}
                       />
                     ))
                   ) : (
@@ -587,7 +687,10 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
                 <SectionTitle icon="⚠" iconColor={appTheme.colors.warning} title="OK with caution" />
                 <View style={styles.cardsColumn}>
                   {result.caution.map((item) => (
-                    <CautionCard key={`c_${item.name}`} item={item} onTakeDish={(dish) => void handleTakeDish(dish, 'caution')} onAskBuddy={() => navigation.navigate('Chat', { resultId: result.id })} onShowQuickFix={handleShowQuickFix} />
+                    <DishRow
+                      key={`c_${item.name}`}
+                      item={toDishRecommendation(item, 'caution')}
+                    />
                   ))}
                 </View>
               </View>
@@ -596,7 +699,10 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
                 <SectionTitle icon="⊘" iconColor={appTheme.colors.danger} title="Better avoid" />
                 <View style={styles.cardsColumn}>
                   {result.avoid.map((item) => (
-                    <AvoidCard key={`a_${item.name}`} item={item} onTakeDish={(dish) => void handleTakeDish(dish, 'avoid')} onAskBuddy={() => navigation.navigate('Chat', { resultId: result.id })} />
+                    <DishRow
+                      key={`a_${item.name}`}
+                      item={toDishRecommendation(item, 'avoid')}
+                    />
                   ))}
                 </View>
               </View>
@@ -666,6 +772,7 @@ const styles = StyleSheet.create({
   sectionIcon: { fontSize: 22 },
   sectionTitle: { ...typography.h2, color: appTheme.colors.textPrimary },
   cardsColumn: { gap: spec.spacing[20] },
+  dishCard: { gap: spec.spacing[12] },
   topPickCard: { gap: spec.spacing[12] },
   dishName: {
     ...typography.title3,
@@ -691,6 +798,7 @@ const styles = StyleSheet.create({
     color: appTheme.colors.success,
     fontWeight: '600',
   },
+  pins: { flexDirection: 'row', flexWrap: 'wrap', gap: appTheme.spacing.xs },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spec.spacing[8] },
   extraLine: { ...typography.footnote, color: appTheme.colors.textSecondary },
   cardActions: {
