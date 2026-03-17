@@ -10,6 +10,8 @@ import { PaywallScreen } from '../../screens/PaywallScreen';
 import { ProfileScreen } from '../../screens/ProfileScreen';
 import { ScanMenuScreen } from '../../screens/ScanMenuScreen';
 import { SignInNudgeScreen } from '../../screens/SignInNudgeScreen';
+import { LoginScreen } from '../../screens/LoginScreen';
+import { AIDebugLogsScreen } from '../../screens/AIDebugLogsScreen';
 import { TrackMealScreen } from '../../screens/TrackMealScreen';
 import { WelcomeScreen } from '../../screens/WelcomeScreen';
 import { RootStackParamList } from './types';
@@ -29,6 +31,7 @@ export function AppNavigator(): React.JSX.Element {
       }}
     >
       <Stack.Screen name="Welcome" component={WelcomeScreen} />
+      <Stack.Screen name="Login" component={LoginScreen} options={{ presentation: 'modal' }} />
       <Stack.Screen name="GoalSelection" component={GoalSelectionScreen} />
       <Stack.Screen name="DietaryProfile" component={DietaryProfileScreen} />
       <Stack.Screen name="Home" component={HomeScreen} />
@@ -36,8 +39,13 @@ export function AppNavigator(): React.JSX.Element {
       <Stack.Screen name="MenuResults" component={MenuResultsScreen} />
       <Stack.Screen name="TrackMeal" component={TrackMealScreen} />
       <Stack.Screen name="Chat" component={ChatScreen} />
-      <Stack.Screen name="Paywall" component={PaywallScreen} options={{ presentation: 'modal' }} />
+      <Stack.Screen
+        name="Paywall"
+        component={PaywallScreen}
+        options={{ presentation: 'fullScreenModal' }}
+      />
       <Stack.Screen name="Profile" component={ProfileScreen} />
+      <Stack.Screen name="AIDebugLogs" component={AIDebugLogsScreen} />
       <Stack.Screen name="SignInNudge" component={SignInNudgeScreen} options={{ presentation: 'modal' }} />
     </Stack.Navigator>
   );

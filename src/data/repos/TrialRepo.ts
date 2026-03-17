@@ -5,6 +5,7 @@ import { getJson, setJson } from '../storage/storage';
 
 const TRIAL_KEY = 'buddy_trial_state';
 const TRIAL_DAYS = 7;
+const AI_QUOTA_COOLDOWN_MS = 60 * 60 * 1000; // 60 minutes
 const initialTrial: TrialState = { isPremium: false, scansUsedTodayCount: 0 };
 
 export class TrialRepo {
@@ -14,9 +15,21 @@ export class TrialRepo {
   async saveTrial(state: TrialState): Promise<void> {
     await setJson(TRIAL_KEY, state);
   }
+
+  async isAiQuotaExhausted(): Promise<boolean> {
+    const trial = await this.getTrial();
+    return trial.aiQuotaExhaustedUntil != null && Date.now() < trial.aiQuotaExhaustedUntil;
+  }
+
+  async setAiQuotaExhausted(): Promise<void> {
+    const trial = await this.getTrial();
+    await this.saveTrial({ ...trial, aiQuotaExhaustedUntil: Date.now() + AI_QUOTA_COOLDOWN_MS });
+  }
+
   /** Check if user can scan today (no state change). Use before calling AI. */
   async canScanToday(nowDate = new Date()): Promise<boolean> {
     if (TEST_MODE) return true;
+    if (await this.isAiQuotaExhausted()) return false;
     const trial = await this.getTrial();
     if (trial.isPremium) return true;
     if (trial.trialEndsAt && nowDate.getTime() <= new Date(trial.trialEndsAt).getTime()) return true;

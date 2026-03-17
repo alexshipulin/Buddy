@@ -1,11 +1,10 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import React from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../app/navigation/types';
 import { HistoryItem, MacroTotals, NutritionTargets, UserProfile } from '../domain/models';
-import { USE_MOCK_DATA } from '../config/local';
-import { mockHomeGreeting, mockRecentItems, mockTodayMacros } from '../mock/home';
 import { historyRepo, userRepo } from '../services/container';
 import { computeTodayMacrosUseCase } from '../services/computeTodayMacrosUseCase';
 import { formatTimeAgo } from '../utils/time';
@@ -61,12 +60,6 @@ export function HomeScreen({ navigation }: Props): React.JSX.Element {
   const [recent, setRecent] = React.useState<HistoryItem[]>([]);
 
   const load = React.useCallback(async (): Promise<void> => {
-    if (USE_MOCK_DATA) {
-      setGreeting(mockHomeGreeting);
-      setTodayMacros(mockTodayMacros);
-      setRecent(mockRecentItems);
-      return;
-    }
     const loadedUser = await userRepo.getUser();
     const loadedMacros = await computeTodayMacrosUseCase(new Date(), { historyRepo });
     const loadedRecent = await historyRepo.listRecent(10);
@@ -76,7 +69,7 @@ export function HomeScreen({ navigation }: Props): React.JSX.Element {
     setTargets(loadedTargets);
     setRecent(loadedRecent);
     const auth = await userRepo.getAuthState();
-    setGreeting(auth.displayName ? `Hello, ${auth.displayName}` : 'Hello, Alex');
+    setGreeting(auth.displayName ? `Hello, ${auth.displayName}` : 'Hello');
   }, []);
   useFocusEffect(React.useCallback(() => { void load(); return undefined; }, [load]));
 
@@ -91,7 +84,7 @@ export function HomeScreen({ navigation }: Props): React.JSX.Element {
             <Text style={styles.subtitleHeader} maxFontSizeMultiplier={1.2}>Ready to scan?</Text>
           </View>
           <Pressable style={styles.avatar} onPress={() => navigation.navigate('Profile')}>
-            <Image source={{ uri: 'https://dummyimage.com/120x120/e2e8f0/94a3b8.png&text=+' }} style={styles.avatarImage} />
+            <MaterialIcons name="perm-identity" size={24} color={appTheme.colors.accent} />
           </Pressable>
         </View>
         <Card style={styles.todayCard}>
@@ -151,14 +144,25 @@ export function HomeScreen({ navigation }: Props): React.JSX.Element {
           </Pressable>
         </View>
         <Text style={styles.recentHeader} maxFontSizeMultiplier={1.2}>Recent</Text>
-        {recent.map((item) => (
-          <Pressable key={item.id} onPress={() => item.type === 'menu_scan' ? navigation.navigate('MenuResults', { resultId: item.payloadRef }) : navigation.navigate('TrackMeal', { mealId: item.payloadRef, readOnly: true })}>
-            <Card style={styles.recentCard}>
-              <View style={styles.recentMain}><Text style={styles.recentTitle} maxFontSizeMultiplier={1.2}>{item.title}</Text><Text style={styles.recentTime}>{formatTimeAgo(item.createdAt)}</Text></View>
-              <Text style={[styles.recentTag, item.type === 'menu_scan' ? styles.recentTagMenu : styles.recentTagMeal]}>{item.type === 'menu_scan' ? 'Menu' : 'Meal'}</Text>
-            </Card>
-          </Pressable>
-        ))}
+        {recent.length === 0 ? (
+          <Card style={styles.recentPlaceholderCard}>
+            <View style={styles.recentPlaceholderIconWrap}>
+              <MaterialIcons name="history" size={20} color={appTheme.colors.muted} />
+            </View>
+            <Text style={styles.recentPlaceholderText} maxFontSizeMultiplier={1.2}>
+              Start scanning to see recent dishes
+            </Text>
+          </Card>
+        ) : (
+          recent.map((item) => (
+            <Pressable key={item.id} onPress={() => item.type === 'menu_scan' ? navigation.navigate('MenuResults', { resultId: item.payloadRef }) : navigation.navigate('TrackMeal', { mealId: item.payloadRef, readOnly: true })}>
+              <Card style={styles.recentCard}>
+                <View style={styles.recentMain}><Text style={styles.recentTitle} maxFontSizeMultiplier={1.2}>{item.title}</Text><Text style={styles.recentTime}>{formatTimeAgo(item.createdAt)}</Text></View>
+                <Text style={[styles.recentTag, item.type === 'menu_scan' ? styles.recentTagMenu : styles.recentTagMeal]}>{item.type === 'menu_scan' ? 'Menu' : 'Meal'}</Text>
+              </Card>
+            </Pressable>
+          ))
+        )}
         <Text style={styles.disclaimer} maxFontSizeMultiplier={1.2}>Nutritional values are estimates based on AI analysis.{'\n'}Please verify with professional advice if needed.</Text>
       </View>
     </Screen>
@@ -168,8 +172,16 @@ export function HomeScreen({ navigation }: Props): React.JSX.Element {
 const styles = StyleSheet.create({
   scroll: { gap: spec.spacing[16], paddingBottom: spec.spacing[40] },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  avatar: { width: 44, height: 44, borderRadius: 22, overflow: 'hidden', minWidth: spec.minTouchTarget, minHeight: spec.minTouchTarget },
-  avatarImage: { width: '100%', height: '100%' },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    minWidth: spec.minTouchTarget,
+    minHeight: spec.minTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: appTheme.colors.accentSoft,
+  },
   greeting: { ...typography.largeTitle },
   subtitleHeader: { ...typography.body, color: appTheme.colors.muted, marginTop: spec.spacing[4] },
   todayCard: { gap: 24, paddingTop: 24, paddingBottom: 32, paddingHorizontal: 24 },
@@ -206,6 +218,28 @@ const styles = StyleSheet.create({
   actionIconOrange: { backgroundColor: appTheme.colors.warningSoft },
   actionTitle: { ...typography.h2, textAlign: 'center' },
   recentHeader: { ...typography.h2, marginTop: spec.spacing[4] },
+  recentPlaceholderCard: {
+    minHeight: 96,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spec.spacing[8],
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  recentPlaceholderIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EEF2F7',
+  },
+  recentPlaceholderText: {
+    ...typography.body,
+    color: appTheme.colors.muted,
+    textAlign: 'center',
+  },
   recentCard: { flexDirection: 'row', gap: spec.spacing[12], alignItems: 'center', minHeight: 88 },
   recentMain: { flex: 1 },
   recentTitle: { ...typography.bodySemibold },

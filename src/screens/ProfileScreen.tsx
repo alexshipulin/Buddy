@@ -1,11 +1,10 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { RootStackParamList } from '../app/navigation/types';
 import { ActivityLevel, Sex, UserProfile } from '../domain/models';
-import { USE_MOCK_DATA } from '../config/local';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { mockProfile, mockProfileMeta } from '../mock/profile';
+import { clearAICache } from '../ai/aiCache';
 import { trialRepo, userRepo } from '../services/container';
 import { calculateNutritionTargets } from '../services/calculateNutritionTargets';
 import { ScreenHeader } from '../components/ScreenHeader';
@@ -22,19 +21,26 @@ import { shadowTokens } from '../design/tokens';
 import { appTheme } from '../design/theme';
 import { spec } from '../design/spec';
 import { typography } from '../ui/typography';
+import { useAppAlert } from '../ui/components/AppAlertProvider';
 
 /** Horizontal space for card shadow so it is not clipped (≥ shadowRadius). */
 const CARD_SHADOW_MARGIN = shadowTokens.card.shadowRadius;
+const SEX_OPTIONS: Sex[] = ['Male', 'Female', 'Other', 'Prefer not to say'];
+const ACTIVITY_OPTIONS: ActivityLevel[] = ['Low', 'Medium', 'High'];
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Profile'>;
 
 export function ProfileScreen({ navigation }: Props): React.JSX.Element {
+  const { showAlert } = useAppAlert();
   const [user, setUser] = React.useState<UserProfile | null>(null);
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
   const scrollPaddingBottom = getCTATotalHeight(insets.bottom) + spec.spacing[12];
   const pagePaddingX = getPagePaddingX(screenWidth);
   const scrollContentWidth = screenWidth - pagePaddingX * 2;
+  const termsUrl = process.env.EXPO_PUBLIC_TERMS_URL?.trim();
+  const privacyUrl = process.env.EXPO_PUBLIC_PRIVACY_URL?.trim();
+  const deleteAccountUrl = process.env.EXPO_PUBLIC_DELETE_ACCOUNT_URL?.trim();
 
   const [trialText, setTrialText] = React.useState('Free');
   const [height, setHeight] = React.useState('');
@@ -46,19 +52,10 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
   const [calcError, setCalcError] = React.useState<string | null>(null);
   const [calcErrorExpanded, setCalcErrorExpanded] = React.useState(false);
   const [savedUser, setSavedUser] = React.useState<UserProfile | null>(null);
+  const [isAuthModalVisible, setIsAuthModalVisible] = React.useState(false);
 
   React.useEffect(() => {
     void (async () => {
-      if (USE_MOCK_DATA) {
-        setUser(mockProfile);
-        setHeight(String(mockProfile.baseParams?.heightCm ?? ''));
-        setWeight(String(mockProfile.baseParams?.weightKg ?? ''));
-        setAge(String(mockProfile.baseParams?.age ?? ''));
-        setActivity(mockProfile.baseParams?.activityLevel ?? 'Low');
-        setSex(mockProfile.baseParams?.sex ?? 'Male');
-        setTrialText(mockProfileMeta.trialText);
-        return;
-      }
       const u = await userRepo.getUser();
       setUser(u ?? null);
       if (u?.baseParams) {
@@ -74,6 +71,7 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
   }, []);
 
   const triggerCalculation = React.useCallback(async (profile: UserProfile): Promise<void> => {
+    if (calcStatus === 'calculating') return;
     setCalcStatus('calculating');
     setCalcError(null);
     try {
@@ -84,12 +82,10 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
       setCalcError(e instanceof Error ? e.message : 'Calculation failed. Please try again.');
       setCalcStatus('error');
     }
-  }, []);
+  }, [calcStatus]);
 
   const save = async (): Promise<void> => {
-    if (USE_MOCK_DATA) return;
-    const current = await userRepo.getUser();
-    if (!current) return;
+    const current = await userRepo.ensureUser();
     const h = Number(height);
     const w = Number(weight);
     const a = Number(age);
@@ -125,6 +121,60 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
     }
   };
 
+  const openExternalLink = React.useCallback(
+    async (
+      url: string | undefined,
+      label: string,
+      envVarName: string
+    ): Promise<void> => {
+      if (!url) {
+        await showAlert({
+          title: `${label} unavailable`,
+          message: `Set ${envVarName} to enable this link.`,
+          actions: [{ text: 'OK' }],
+        });
+        return;
+      }
+      try {
+        const canOpen = await Linking.canOpenURL(url);
+        if (!canOpen) {
+          await showAlert({
+            title: 'Cannot open link',
+            message: `Unable to open ${label}.`,
+            actions: [{ text: 'OK' }],
+          });
+          return;
+        }
+        await Linking.openURL(url);
+      } catch {
+        await showAlert({
+          title: 'Cannot open link',
+          message: `Unable to open ${label}.`,
+          actions: [{ text: 'OK' }],
+        });
+      }
+    },
+    [showAlert]
+  );
+
+  const clearAiScanCache = React.useCallback(async (): Promise<void> => {
+    const { index } = await showAlert({
+      title: 'Reset AI scan cache?',
+      message: 'This will clear cached AI scan results so the same menu is analyzed again as new.',
+      actions: [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Reset' },
+      ],
+    });
+    if (index !== 1) return;
+    const removed = await clearAICache();
+    await showAlert({
+      title: 'Done',
+      message: removed > 0 ? `Removed ${removed} AI cache entries.` : 'AI cache is already empty.',
+      actions: [{ text: 'OK' }],
+    });
+  }, [showAlert]);
+
   return (
     <Screen safeTop={false}>
       <ScreenHeader
@@ -132,7 +182,7 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
         paddingHorizontal={CARD_SHADOW_MARGIN}
         style={{ marginBottom: layout.sectionSpacingY }}
         rightAction={
-          <Pressable style={styles.loginPill} hitSlop={8}>
+          <Pressable style={styles.loginPill} hitSlop={8} onPress={() => setIsAuthModalVisible(true)}>
             <Text style={styles.loginPillText} maxFontSizeMultiplier={1.2}>Login</Text>
           </Pressable>
         }
@@ -153,15 +203,32 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
           <PrimaryButton title="Upgrade to Premium" onPress={() => navigation.navigate('Paywall')} />
         </Card>
         <Card>
-          <Text style={styles.sectionLabel}>DIETARY PROFILE</Text>
-          <Pressable style={styles.profileLink} onPress={() => navigation.navigate('DietaryProfile')}>
-            <AppIcon name="diet" />
-            <View style={styles.linkBody}>
-              <Text style={styles.linkTitle} maxFontSizeMultiplier={1.2}>Edit dietary profile</Text>
-              <Text style={styles.linkSubtitle} maxFontSizeMultiplier={1.2}>Preferences, allergies, diet type</Text>
+          <Text style={styles.sectionLabel}>PERSONAL PARAMETERS</Text>
+          <View style={styles.paramsContent}>
+            <View style={styles.grid}>
+              <View style={styles.gridItem}>
+                <TextField label="Height (cm)" value={height} onChangeText={setHeight} keyboardType="number-pad" />
+              </View>
+              <View style={styles.gridItem}>
+                <TextField label="Weight (kg)" value={weight} onChangeText={setWeight} keyboardType="decimal-pad" />
+              </View>
+              <View style={styles.gridItem}>
+                <TextField label="Age" value={age} onChangeText={setAge} keyboardType="number-pad" placeholder="Optional" />
+              </View>
+              <View style={styles.gridItem}>
+                <SelectField
+                  label="Sex"
+                  value={sex}
+                  onChange={setSex}
+                  options={SEX_OPTIONS.map((item) => ({ label: item, value: item }))}
+                />
+              </View>
             </View>
-            <Text style={styles.chevron}>{'>'}</Text>
-          </Pressable>
+            <View style={styles.segmentWrap}>
+              <Text style={styles.inputLabel} maxFontSizeMultiplier={1.2}>Activity Level</Text>
+              <SegmentedControl value={activity} options={ACTIVITY_OPTIONS} onChange={setActivity} />
+            </View>
+          </View>
         </Card>
         {calcStatus === 'calculating' && (
           <Card style={styles.calcCard}>
@@ -193,32 +260,15 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
           </Card>
         )}
         <Card>
-          <Text style={styles.sectionLabel}>PERSONAL PARAMETERS</Text>
-          <View style={styles.paramsContent}>
-            <View style={styles.grid}>
-              <View style={styles.gridItem}>
-                <TextField label="Height (cm)" value={height} onChangeText={setHeight} keyboardType="number-pad" />
-              </View>
-              <View style={styles.gridItem}>
-                <TextField label="Weight (kg)" value={weight} onChangeText={setWeight} keyboardType="decimal-pad" />
-              </View>
-              <View style={styles.gridItem}>
-                <TextField label="Age" value={age} onChangeText={setAge} keyboardType="number-pad" placeholder="Optional" />
-              </View>
-              <View style={styles.gridItem}>
-                <SelectField
-                  label="Sex"
-                  value={sex}
-                  onChange={setSex}
-                  options={mockProfileMeta.sexOptions.map((item) => ({ label: item, value: item }))}
-                />
-              </View>
+          <Text style={styles.sectionLabel}>DIETARY PROFILE</Text>
+          <Pressable style={styles.profileLink} onPress={() => navigation.navigate('DietaryProfile')}>
+            <AppIcon name="diet" />
+            <View style={styles.linkBody}>
+              <Text style={styles.linkTitle} maxFontSizeMultiplier={1.2}>Edit dietary profile</Text>
+              <Text style={styles.linkSubtitle} maxFontSizeMultiplier={1.2}>Preferences, allergies, diet type</Text>
             </View>
-            <View style={styles.segmentWrap}>
-              <Text style={styles.inputLabel} maxFontSizeMultiplier={1.2}>Activity Level</Text>
-              <SegmentedControl value={activity} options={mockProfileMeta.activityOptions} onChange={setActivity} />
-            </View>
-          </View>
+            <Text style={styles.chevron}>{'>'}</Text>
+          </Pressable>
         </Card>
         <Card>
           <Text style={styles.sectionLabel}>ACCOUNT</Text>
@@ -230,10 +280,61 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
             <Text style={styles.fieldTitle} maxFontSizeMultiplier={1.2}>Trial</Text>
             <Text style={styles.trialText} maxFontSizeMultiplier={1.2}>{trialText}</Text>
           </View>
+          <Pressable
+            style={styles.rowBetween}
+            onPress={() => navigation.navigate('AIDebugLogs')}
+          >
+            <Text style={styles.fieldTitle} maxFontSizeMultiplier={1.2}>AI debug logs</Text>
+            <Text style={styles.chevron}>{'>'}</Text>
+          </Pressable>
+          <Pressable
+            style={styles.rowBetween}
+            onPress={() => void clearAiScanCache()}
+          >
+            <Text style={styles.techActionText} maxFontSizeMultiplier={1.2}>Reset AI scan cache (tech)</Text>
+            <Text style={styles.chevron}>{'>'}</Text>
+          </Pressable>
+          <Pressable
+            style={styles.rowBetween}
+            onPress={() =>
+              void openExternalLink(
+                deleteAccountUrl,
+                'Delete account',
+                'EXPO_PUBLIC_DELETE_ACCOUNT_URL'
+              )
+            }
+          >
+            <Text style={styles.deleteAccountText} maxFontSizeMultiplier={1.2}>Delete account</Text>
+            <Text style={styles.chevron}>{'>'}</Text>
+          </Pressable>
         </Card>
         <Card style={styles.legalCard}>
-          <View style={styles.rowBetween}><Text style={styles.fieldTitle} maxFontSizeMultiplier={1.2}>Terms of Service</Text><Text style={styles.chevron}>{'>'}</Text></View>
-          <View style={styles.rowBetween}><Text style={styles.fieldTitle} maxFontSizeMultiplier={1.2}>Privacy Policy</Text><Text style={styles.chevron}>{'>'}</Text></View>
+          <Pressable
+            style={styles.rowBetween}
+            onPress={() =>
+              void openExternalLink(
+                termsUrl,
+                'Terms of Service',
+                'EXPO_PUBLIC_TERMS_URL'
+              )
+            }
+          >
+            <Text style={styles.fieldTitle} maxFontSizeMultiplier={1.2}>Terms of Service</Text>
+            <Text style={styles.chevron}>{'>'}</Text>
+          </Pressable>
+          <Pressable
+            style={styles.rowBetween}
+            onPress={() =>
+              void openExternalLink(
+                privacyUrl,
+                'Privacy Policy',
+                'EXPO_PUBLIC_PRIVACY_URL'
+              )
+            }
+          >
+            <Text style={styles.fieldTitle} maxFontSizeMultiplier={1.2}>Privacy Policy</Text>
+            <Text style={styles.chevron}>{'>'}</Text>
+          </Pressable>
         </Card>
         <Text style={styles.disclaimer} maxFontSizeMultiplier={1.2}>Disclaimer: This app is for informational purposes only and does not constitute medical advice.</Text>
         </View>
@@ -242,6 +343,58 @@ export function ProfileScreen({ navigation }: Props): React.JSX.Element {
       <BottomCTA>
         <PrimaryButton title="Save Changes" onPress={() => void save()} />
       </BottomCTA>
+      <Modal
+        transparent
+        visible={isAuthModalVisible}
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setIsAuthModalVisible(false)}
+      >
+        <View style={styles.authModalBackdrop}>
+          <Pressable
+            style={StyleSheet.absoluteFillObject}
+            onPress={() => setIsAuthModalVisible(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Close login popup"
+          />
+          <View style={styles.authModalCard}>
+            <View style={styles.authModalHeader}>
+              <Text style={styles.authModalTitle} maxFontSizeMultiplier={1.2}>Login</Text>
+              <Pressable
+                style={styles.authModalClose}
+                onPress={() => setIsAuthModalVisible(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close login popup"
+              >
+                <Text style={styles.authModalCloseText} maxFontSizeMultiplier={1.2}>×</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.authModalSubtitle} maxFontSizeMultiplier={1.2}>
+              Choose a sign-in method
+            </Text>
+            <Pressable
+              style={styles.authMethodSlot}
+              accessibilityRole="button"
+              onPress={() => {
+                setIsAuthModalVisible(false);
+                navigation.navigate('Login');
+              }}
+            >
+              <Text style={styles.authMethodSlotText} maxFontSizeMultiplier={1.2}>Continue with Apple</Text>
+            </Pressable>
+            <Pressable
+              style={styles.authMethodSlot}
+              accessibilityRole="button"
+              onPress={() => {
+                setIsAuthModalVisible(false);
+                navigation.navigate('Login');
+              }}
+            >
+              <Text style={styles.authMethodSlotText} maxFontSizeMultiplier={1.2}>Continue with Google</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
@@ -262,6 +415,8 @@ const styles = StyleSheet.create({
     borderTopColor: appTheme.colors.border,
   },
   fieldTitle: { ...typography.body, color: appTheme.colors.textPrimary, fontWeight: '500' },
+  techActionText: { ...typography.body, color: appTheme.colors.accent, fontWeight: '600' },
+  deleteAccountText: { ...typography.body, color: appTheme.colors.danger, fontWeight: '600' },
   guestPill: { backgroundColor: appTheme.colors.border, borderRadius: spec.chipRadius, paddingHorizontal: spec.chipPaddingX, paddingVertical: spec.spacing[4] },
   guestText: { ...appTheme.typography.caption, color: appTheme.colors.ink, fontWeight: '700' },
   trialText: { color: appTheme.colors.success, fontWeight: '700' },
@@ -322,5 +477,59 @@ const styles = StyleSheet.create({
     fontSize: spec.headerPillFontSize,
     fontWeight: '600' as const,
     color: '#15803D',
+  },
+  authModalBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: spec.spacing[20],
+    backgroundColor: 'rgba(15, 23, 42, 0.48)',
+  },
+  authModalCard: {
+    borderRadius: 24,
+    backgroundColor: appTheme.colors.surface,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+    padding: spec.spacing[20],
+    gap: spec.spacing[12],
+  },
+  authModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  authModalTitle: {
+    ...typography.h2,
+    color: appTheme.colors.textPrimary,
+  },
+  authModalClose: {
+    width: spec.minTouchTarget,
+    height: spec.minTouchTarget,
+    borderRadius: spec.chipRadius,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  authModalCloseText: {
+    ...typography.h2,
+    color: appTheme.colors.muted,
+    lineHeight: 28,
+  },
+  authModalSubtitle: {
+    ...typography.body,
+    color: appTheme.colors.muted,
+    marginBottom: spec.spacing[4],
+  },
+  authMethodSlot: {
+    minHeight: 56,
+    borderRadius: spec.inputRadius,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+    backgroundColor: appTheme.colors.infoSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spec.spacing[12],
+  },
+  authMethodSlotText: {
+    ...typography.bodySemibold,
+    color: appTheme.colors.textPrimary,
   },
 });

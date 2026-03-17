@@ -1,5 +1,6 @@
 export type RootStackParamList = {
   Welcome: undefined;
+  Login: undefined;
   GoalSelection: undefined;
   DietaryProfile: undefined;
   Home: undefined;
@@ -10,4 +11,5 @@ export type RootStackParamList = {
   Paywall: { trialDaysLeft?: number; source?: 'first_result' | 'limit' | 'chat' } | undefined;
   SignInNudge: { source?: 'auto' | 'manual' } | undefined;
   Profile: { section?: 'baseParams' } | undefined;
+  AIDebugLogs: undefined;
 };

@@ -4,9 +4,24 @@ import { createNavigationContainerRef, DefaultTheme, NavigationContainer } from 
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppNavigator } from './src/app/navigation/AppNavigator';
 import { RootStackParamList } from './src/app/navigation/types';
-import { seedMockDataIfNeeded } from './src/data/seed/seedMockData';
+import { removeLegacyMockDataIfNeeded } from './src/data/seed/removeLegacyMockData';
 import { appTheme } from './src/design/theme';
-import { appPrefsRepo, chatRepo, historyRepo, trialRepo, userRepo } from './src/services/container';
+import { appPrefsRepo, userRepo } from './src/services/container';
+import { AppAlertProvider } from './src/ui/components/AppAlertProvider';
+
+function maybeCompleteAuthSessionSafely(): void {
+  try {
+    const moduleName = 'expo-web-browser';
+    const webBrowser = require(moduleName) as {
+      maybeCompleteAuthSession?: () => void;
+    };
+    webBrowser.maybeCompleteAuthSession?.();
+  } catch {
+    // Optional dependency missing; app can still run without OAuth redirect helper.
+  }
+}
+
+maybeCompleteAuthSessionSafely();
 
 const navTheme = {
   ...DefaultTheme,
@@ -28,10 +43,9 @@ export default function App(): React.JSX.Element {
   React.useEffect(() => {
     const bootstrap = async (): Promise<void> => {
       try {
-        await seedMockDataIfNeeded({ userRepo, historyRepo, trialRepo, chatRepo });
+        await removeLegacyMockDataIfNeeded();
       } catch (error) {
-        // Avoid blank screen if bootstrap fails; continue with app startup.
-        console.warn('Seed bootstrap failed, continuing without seed data.', error);
+        console.warn('Mock data cleanup failed, continuing startup.', error);
       } finally {
         setIsBootstrapped(true);
       }
@@ -55,8 +69,10 @@ export default function App(): React.JSX.Element {
   return (
     <SafeAreaProvider>
       <NavigationContainer ref={navRef} theme={navTheme} onReady={() => setIsNavReady(true)}>
-        <StatusBar style="dark" />
-        {isBootstrapped ? <AppNavigator /> : null}
+        <AppAlertProvider>
+          <StatusBar style="dark" />
+          {isBootstrapped ? <AppNavigator /> : null}
+        </AppAlertProvider>
       </NavigationContainer>
     </SafeAreaProvider>
   );

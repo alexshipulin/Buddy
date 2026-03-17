@@ -1,14 +1,25 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
-import { Alert, Animated, Clipboard, Easing, Image, ImageStyle, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Animated,
+  Easing,
+  Image,
+  Linking,
+  Modal,
+  Pressable,
+  Share,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../app/navigation/types';
-import { PrimaryButton } from '../components/PrimaryButton';
 import { Card } from '../components/Card';
-import { AppScreen } from '../components/AppScreen';
 import { appTheme } from '../design/theme';
 import {
   AnalyzeMenuOutput,
@@ -19,11 +30,11 @@ import {
   MenuAnalysisValidationError,
 } from '../services/analyzeMenuUseCase';
 import { appPrefsRepo, historyRepo, menuAnalysisProvider, trialRepo, userRepo } from '../services/container';
+import { useAppAlert } from '../ui/components/AppAlertProvider';
+import { abortInflight } from '../ai/inflight';
+import { buildAIDebugReport } from '../ai/aiDebugLog';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScanMenu'>;
-
-// Show detailed AI debug panel in dev builds or when explicitly enabled via env.
-const SHOW_AI_DEBUG = __DEV__ || process.env.EXPO_PUBLIC_SHOW_AI_DEBUG === 'true';
 
 const ANALYZING_MESSAGES = [
   'Finding dishes that match your goal',
@@ -31,6 +42,11 @@ const ANALYZING_MESSAGES = [
   'Tailoring results to your tastes',
   'Almost ready…',
 ];
+
+const BASE_FRAME_WIDTH = 390;
+const BASE_FRAME_HEIGHT = 844;
+const BASE_SCAN_WIDTH = 256;
+const BASE_SCAN_HEIGHT = 384;
 
 function AnalyzingOverlay({ onCancel }: { onCancel: () => void }): React.JSX.Element {
   const insets = useSafeAreaInsets();
@@ -211,23 +227,117 @@ const loadStyles = StyleSheet.create({
 });
 
 export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
+  const { showAlert } = useAppAlert();
   const cameraRef = React.useRef<CameraView | null>(null);
+  const activeRunIdRef = React.useRef(0);
+  const didAutoRequestPermissionRef = React.useRef(false);
   const insets = useSafeAreaInsets();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [photos, setPhotos] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(false);
+  const [flashOn, setFlashOn] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [rawAiOutput, setRawAiOutput] = React.useState<string | null>(null);
   const [rawAiModel, setRawAiModel] = React.useState<string | null>(null);
   const [showRawOutput, setShowRawOutput] = React.useState(false);
 
+  const shareText = React.useCallback(
+    async (text: string, title: string, successMessage: string): Promise<void> => {
+      try {
+        await Share.share({ message: text, title });
+        await showAlert({
+          title: 'Done',
+          message: successMessage,
+        });
+      } catch {
+        await showAlert({
+          title: 'Could not share',
+          message: 'Please try again.',
+        });
+      }
+    },
+    [showAlert]
+  );
+
   const removePhoto = (uri: string): void => setPhotos((p) => p.filter((i) => i !== uri));
   const maxPhotos = 5;
+  const hasCameraPermission = cameraPermission?.granted === true;
+  const cameraStatusResolved = cameraPermission != null;
+  const ensureCameraPermission = React.useCallback(async (): Promise<boolean> => {
+    if (cameraPermission?.granted) return true;
+    const next = await requestCameraPermission();
+    if (next.granted) return true;
+
+    if (!next.canAskAgain) {
+      const { index } = await showAlert({
+        title: 'Camera access is blocked',
+        message: 'Enable camera in system settings to take menu photos.',
+        actions: [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Open settings' },
+        ],
+      });
+      if (index === 1) {
+        try {
+          await Linking.openSettings();
+        } catch {
+          await showAlert({
+            title: 'Could not open settings',
+            message: 'Please open system settings manually and allow camera access.',
+          });
+        }
+      }
+      return false;
+    }
+
+    await showAlert({
+      title: 'Camera access needed',
+      message: 'Please allow camera to scan menus.',
+    });
+    return false;
+  }, [cameraPermission?.granted, requestCameraPermission, showAlert]);
+
+  React.useEffect(() => {
+    if (!cameraStatusResolved || hasCameraPermission || didAutoRequestPermissionRef.current) return;
+    if (cameraPermission?.canAskAgain) {
+      didAutoRequestPermissionRef.current = true;
+      void requestCameraPermission();
+    }
+  }, [
+    cameraPermission?.canAskAgain,
+    cameraStatusResolved,
+    hasCameraPermission,
+    requestCameraPermission,
+  ]);
+
+  const handleCameraMountError = React.useCallback(
+    (event: { message?: string } | Error | undefined): void => {
+      const message =
+        typeof event === 'object' && event && 'message' in event
+          ? String(event.message ?? '')
+          : '';
+      const normalizedMessage = message.toLowerCase();
+      if (normalizedMessage.includes('permission')) {
+        return;
+      }
+      if (__DEV__) {
+        console.warn('[ScanMenu] Camera mount error:', event);
+      }
+      setLoading(false);
+      setErrorMessage(
+        message
+          ? `Camera is unavailable: ${message}`
+          : 'Camera is unavailable on this device. Try using Import.'
+      );
+    },
+    []
+  );
 
   const takePhoto = async (): Promise<void> => {
     if (photos.length >= maxPhotos) return;
-    const granted = cameraPermission?.granted || (await requestCameraPermission()).granted;
-    if (!granted) return Alert.alert('Camera access needed', 'Please allow camera to scan menus.');
+    const granted = await ensureCameraPermission();
+    if (!granted) return;
     const shot = await cameraRef.current?.takePictureAsync({ quality: 0.7 });
     if (shot?.uri) setPhotos((p) => [...p, shot.uri].slice(0, maxPhotos));
   };
@@ -247,12 +357,17 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
   const askSaveScansPreferenceIfNeeded = async (): Promise<boolean> => {
     const prefs = await appPrefsRepo.getPrefs();
     if (prefs.saveScansPromptHandled) return prefs.saveScansToPhotos;
-    return new Promise<boolean>((resolve) => {
-      Alert.alert('Save scans to Photos?', 'So you can access them later.', [
-        { text: 'Not now', style: 'cancel', onPress: () => { void appPrefsRepo.setSaveScansPreference(false); resolve(false); } },
-        { text: 'Allow', onPress: () => { void appPrefsRepo.setSaveScansPreference(true); resolve(true); } },
-      ]);
+    const { index } = await showAlert({
+      title: 'Save scans to Photos?',
+      message: 'So you can access them later.',
+      actions: [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Allow' },
+      ],
     });
+    const shouldSave = index === 1;
+    await appPrefsRepo.setSaveScansPreference(shouldSave);
+    return shouldSave;
   };
 
   const maybeSaveToGallery = async (uris: string[]): Promise<void> => {
@@ -278,8 +393,24 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
     setShowRawOutput(false);
   };
 
+  const cancelCurrentAnalysis = React.useCallback((): void => {
+    activeRunIdRef.current += 1;
+    abortInflight('menu_scan');
+    setLoading(false);
+  }, []);
+
+  React.useEffect(
+    () => () => {
+      cancelCurrentAnalysis();
+    },
+    [cancelCurrentAnalysis]
+  );
+
   const onContinue = async (): Promise<void> => {
+    if (loading) return;
     dismissError();
+    const runId = activeRunIdRef.current + 1;
+    activeRunIdRef.current = runId;
     setLoading(true);
     try {
       const output = await analyzeMenuUseCase(photos, {
@@ -288,8 +419,11 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
         trialRepo,
         userRepo,
       });
+      if (activeRunIdRef.current !== runId) return;
       await onSuccess(output);
     } catch (e) {
+      if (activeRunIdRef.current !== runId) return;
+      if (e instanceof Error && e.name === 'AbortError') return;
       if (e instanceof DailyScanLimitReachedError) {
         setErrorMessage('Daily limit reached. You can scan one menu per day on Free plan.');
       } else if (e instanceof MenuAnalysisInvalidJsonError) {
@@ -299,11 +433,19 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
         if (__DEV__ && e.raw) {
           console.warn('[MenuScan] Raw model output:', e.raw);
         }
-        setRawAiOutput(e.raw || null);
+        const rawOrDetails = e.raw?.trim()
+          ? e.raw
+          : e.issues?.length
+            ? JSON.stringify({ issues: e.issues }, null, 2)
+            : e.message;
+        setRawAiOutput(rawOrDetails || null);
         setRawAiModel(e.model || null);
-        setErrorMessage('Could not analyze this menu. Please try again.');
+        setErrorMessage(
+          e.message?.toLowerCase().includes('timeout')
+            ? 'Analysis timed out. Please try again.'
+            : 'Could not analyze this menu. Please try again.'
+        );
       } else if (e instanceof MenuAnalysisValidationError) {
-        // Fallback: validation thrown outside the standard path
         if (__DEV__ && e.issues?.length) {
           console.warn('[MenuScan] Validation issues:', e.issues);
         }
@@ -314,54 +456,204 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
         setErrorMessage(e instanceof Error ? e.message : 'Failed to analyze menu');
       }
     } finally {
-      setLoading(false);
+      if (activeRunIdRef.current === runId) {
+        setLoading(false);
+      }
     }
   };
 
   const isLimitError = errorMessage?.startsWith('Daily limit');
-  const hasRawDebug = SHOW_AI_DEBUG && !!rawAiOutput;
+  const hasRawDebug = !!rawAiOutput;
+  const scale = Math.min(screenWidth / BASE_FRAME_WIDTH, screenHeight / BASE_FRAME_HEIGHT);
+  const scanWidth = Math.round(BASE_SCAN_WIDTH * scale);
+  const scanHeight = Math.round(BASE_SCAN_HEIGHT * scale);
+  const scanRadius = Math.max(20, Math.round(24 * scale));
+  const cornerSize = Math.max(24, Math.round(32 * scale));
+  const cornerStroke = Math.max(2, Math.round(3 * scale));
+  const previewSlots = [photos[0] ?? null, photos[1] ?? null];
+  const canContinue = photos.length > 0 && !loading;
+  const canCapture = hasCameraPermission && photos.length < maxPhotos && !loading;
 
   return (
-    <AppScreen padded={false} respectInsets={false} style={styles.wrap}>
-      <CameraView
-        ref={cameraRef}
-        style={styles.camera}
-        facing="back"
-        onCameraReady={() => {}}
-        onMountError={() => {}}
-      />
-      <View style={[styles.topOverlay, { paddingTop: insets.top + appTheme.spacing.sm }]}>
-        <Pressable style={styles.backBtn} hitSlop={8} onPress={() => navigation.goBack()}>
-          <Text style={styles.backText}>{'<'}</Text>
+    <View style={styles.wrap}>
+      {hasCameraPermission ? (
+        <CameraView
+          ref={cameraRef}
+          style={styles.camera}
+          facing="back"
+          flash={flashOn ? 'on' : 'off'}
+          onCameraReady={() => {}}
+          onMountError={handleCameraMountError}
+        />
+      ) : (
+        <View style={styles.cameraPermissionOverlay}>
+          <View style={styles.cameraPermissionCard}>
+            <Text style={styles.cameraPermissionTitle}>Camera access required</Text>
+            <Text style={styles.cameraPermissionText}>
+              Allow camera to scan menu photos, or use Import from gallery.
+            </Text>
+            <Pressable
+              style={styles.cameraPermissionBtn}
+              onPress={() => {
+                void ensureCameraPermission();
+              }}
+            >
+              <Text style={styles.cameraPermissionBtnText}>Allow camera</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {/* Faux gradients (without extra deps) to match Figma shading */}
+      <View pointerEvents="none" style={styles.topShadeStrong} />
+      <View pointerEvents="none" style={styles.topShadeSoft} />
+      <View pointerEvents="none" style={styles.bottomShadeSoft} />
+      <View pointerEvents="none" style={styles.bottomShadeStrong} />
+
+      <View pointerEvents="none" style={styles.scanFrameLayer}>
+        <View
+          style={[
+            styles.scanFrame,
+            {
+              width: scanWidth,
+              height: scanHeight,
+              borderRadius: scanRadius,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.scanCorner,
+              styles.scanCornerTopLeft,
+              {
+                width: cornerSize,
+                height: cornerSize,
+                borderTopWidth: cornerStroke,
+                borderLeftWidth: cornerStroke,
+                borderTopLeftRadius: scanRadius,
+              },
+            ]}
+          />
+          <View
+            style={[
+              styles.scanCorner,
+              styles.scanCornerTopRight,
+              {
+                width: cornerSize,
+                height: cornerSize,
+                borderTopWidth: cornerStroke,
+                borderRightWidth: cornerStroke,
+                borderTopRightRadius: scanRadius,
+              },
+            ]}
+          />
+          <View
+            style={[
+              styles.scanCorner,
+              styles.scanCornerBottomLeft,
+              {
+                width: cornerSize,
+                height: cornerSize,
+                borderBottomWidth: cornerStroke,
+                borderLeftWidth: cornerStroke,
+                borderBottomLeftRadius: scanRadius,
+              },
+            ]}
+          />
+          <View
+            style={[
+              styles.scanCorner,
+              styles.scanCornerBottomRight,
+              {
+                width: cornerSize,
+                height: cornerSize,
+                borderBottomWidth: cornerStroke,
+                borderRightWidth: cornerStroke,
+                borderBottomRightRadius: scanRadius,
+              },
+            ]}
+          />
+        </View>
+      </View>
+
+      <View style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}>
+        <Pressable
+          style={styles.backBtn}
+          hitSlop={8}
+          onPress={() => {
+            if (loading) cancelCurrentAnalysis();
+            navigation.goBack();
+          }}
+        >
+          <Text style={styles.backText}>{'←'}</Text>
         </Pressable>
         <Text style={styles.title}>Scan menu</Text>
-        <View style={styles.placeholder} />
+        <Pressable
+          style={styles.flashBtn}
+          hitSlop={8}
+          onPress={() => setFlashOn((v) => !v)}
+          accessibilityRole="button"
+          accessibilityLabel={flashOn ? 'Turn flash off' : 'Turn flash on'}
+        >
+          <Text style={[styles.flashText, flashOn && styles.flashTextActive]}>⚡</Text>
+        </Pressable>
       </View>
-      <View style={[styles.bottomOverlay, { paddingBottom: insets.bottom + appTheme.spacing.md }]}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbRow}>
-          {photos.map((uri) => (
-            <View key={uri} style={styles.thumbWrap}>
-              <Image source={{ uri }} style={styles.thumb as ImageStyle} />
-              <Pressable style={styles.removeBtn} hitSlop={8} onPress={() => removePhoto(uri)}>
-                <Text style={styles.removeText}>X</Text>
-              </Pressable>
+
+      <View style={[styles.bottomOverlay, { paddingBottom: insets.bottom + 24 }]}>
+        <View style={styles.thumbRow}>
+          {previewSlots.map((uri, idx) => (
+            <View key={`preview-${idx}`} style={styles.thumbWrap}>
+              {uri ? (
+                <>
+                  <Image source={{ uri }} style={styles.thumb} />
+                  <Pressable style={styles.removeBtn} hitSlop={8} onPress={() => removePhoto(uri)}>
+                    <Text style={styles.removeText}>×</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <View style={[styles.thumb, styles.thumbPlaceholder]} />
+              )}
             </View>
           ))}
-        </ScrollView>
+
+          <Pressable
+            style={[styles.counterTile, canContinue && styles.counterTileActive]}
+            disabled={!canContinue}
+            onPress={() => void onContinue()}
+          >
+            <Text style={styles.counterText}>{`${photos.length}/${maxPhotos}`}</Text>
+          </Pressable>
+        </View>
+
         <View style={styles.bottomRow}>
-          <Pressable style={styles.importBtn} onPress={() => void addFromGallery()}>
+          <Pressable style={styles.importGroup} onPress={() => void addFromGallery()} disabled={loading}>
+            <View style={styles.importBtn}>
+              <View style={styles.importIconFrame}>
+                <View style={styles.importIconDot} />
+                <View style={styles.importIconHill} />
+              </View>
+            </View>
             <Text style={styles.importText}>Import</Text>
           </Pressable>
-          <Pressable style={styles.captureBtn} onPress={() => void takePhoto()}>
+
+          <Pressable style={[styles.captureBtn, !canCapture && styles.captureBtnDisabled]} onPress={() => void takePhoto()} disabled={!canCapture}>
             <View style={styles.captureInner} />
           </Pressable>
-          <View style={styles.placeholder} />
+
+          <Pressable
+            style={styles.analyzeGroup}
+            onPress={() => void onContinue()}
+            disabled={!canContinue}
+          >
+            <View style={[styles.analyzeBtn, !canContinue && styles.analyzeBtnDisabled]}>
+              <Text style={styles.analyzeBtnText}>Analyse</Text>
+            </View>
+          </Pressable>
         </View>
-        <PrimaryButton title="Continue" onPress={() => void onContinue()} disabled={photos.length === 0 || loading} />
       </View>
 
       {loading ? (
-        <AnalyzingOverlay onCancel={() => navigation.goBack()} />
+        <AnalyzingOverlay onCancel={cancelCurrentAnalysis} />
       ) : null}
 
       {errorMessage ? (
@@ -373,12 +665,30 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
               style={styles.copyErrorBtn}
               onPress={() => {
                 if (errorMessage) {
-                  Clipboard.setString(errorMessage);
-                  Alert.alert('Copied', 'Error message copied to clipboard.');
+                  void shareText(
+                    errorMessage,
+                    'Menu analysis error',
+                    'Error message is ready to share.'
+                  );
                 }
               }}
             >
-              <Text style={styles.copyErrorBtnText}>Copy</Text>
+              <Text style={styles.copyErrorBtnText}>Share</Text>
+            </Pressable>
+            <Pressable
+              style={styles.copyErrorBtn}
+              onPress={() => {
+                void (async () => {
+                  const report = await buildAIDebugReport(300);
+                  await shareText(
+                    report,
+                    'AI debug report',
+                    'AI debug report is ready to share.'
+                  );
+                })();
+              }}
+            >
+              <Text style={styles.copyErrorBtnText}>Share AI logs</Text>
             </Pressable>
 
             {/* Developer debug panel — raw AI response */}
@@ -391,7 +701,7 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
                     hitSlop={8}
                   >
                     <Text style={styles.debugToggleText}>
-                      {showRawOutput ? '▲ Hide AI response' : '▼ Show AI response'}
+                      {showRawOutput ? '▲ Hide details' : '▼ Show details'}
                     </Text>
                   </Pressable>
                   {rawAiModel ? (
@@ -409,12 +719,15 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
                       style={styles.copyBtn}
                       onPress={() => {
                         if (rawAiOutput) {
-                          Clipboard.setString(rawAiOutput);
-                          Alert.alert('Copied', 'Raw AI response copied to clipboard.');
+                          void shareText(
+                            rawAiOutput,
+                            'Raw AI response',
+                            'Raw AI response is ready to share.'
+                          );
                         }
                       }}
                     >
-                      <Text style={styles.copyBtnText}>Copy</Text>
+                      <Text style={styles.copyBtnText}>Share</Text>
                     </Pressable>
                   </View>
                 )}
@@ -444,15 +757,119 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
           </Card>
         </View>
       ) : null}
-    </AppScreen>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: '#000000' },
   camera: { ...StyleSheet.absoluteFillObject },
+  cameraPermissionOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    backgroundColor: '#05070D',
+  },
+  cameraPermissionCard: {
+    width: '100%',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    gap: 12,
+  },
+  cameraPermissionTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 24,
+  },
+  cameraPermissionText: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '500',
+  },
+  cameraPermissionBtn: {
+    alignSelf: 'flex-start',
+    borderRadius: 22,
+    backgroundColor: '#8C2BEE',
+    paddingHorizontal: 18,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cameraPermissionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  topShadeStrong: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 132,
+    backgroundColor: 'rgba(0,0,0,0.36)',
+  },
+  topShadeSoft: {
+    position: 'absolute',
+    top: 132,
+    left: 0,
+    right: 0,
+    height: 84,
+    backgroundColor: 'rgba(0,0,0,0.14)',
+  },
+  bottomShadeSoft: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 208,
+    height: 104,
+    backgroundColor: 'rgba(0,0,0,0.12)',
+  },
+  bottomShadeStrong: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 208,
+    backgroundColor: 'rgba(0,0,0,0.46)',
+  },
+  scanFrameLayer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scanFrame: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: 'transparent',
+    shadowColor: '#000000',
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 10,
+  },
+  scanCorner: {
+    position: 'absolute',
+    borderColor: '#FFFFFF',
+  },
+  scanCornerTopLeft: { top: -1, left: -1 },
+  scanCornerTopRight: { top: -1, right: -1 },
+  scanCornerBottomLeft: { bottom: -1, left: -1 },
+  scanCornerBottomRight: { bottom: -1, right: -1 },
   topOverlay: {
-    paddingHorizontal: appTheme.spacing.md,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 24,
+    paddingBottom: 24,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -461,53 +878,204 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#00000055',
+    backgroundColor: 'rgba(0,0,0,0.24)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backText: { color: '#FFFFFF', fontWeight: '700' },
-  title: { fontSize: appTheme.typography.body.fontSize, color: '#FFFFFF', fontWeight: '700' },
-  bottomOverlay: {
-    marginTop: 'auto',
-    paddingHorizontal: appTheme.spacing.md,
-    gap: appTheme.spacing.md,
+  backText: {
+    color: '#FFFFFF',
+    fontWeight: '400',
+    fontSize: 24,
+    lineHeight: 24,
+    marginTop: -2,
   },
-  thumbRow: { gap: appTheme.spacing.sm, paddingVertical: 2 },
+  title: {
+    fontSize: 17,
+    lineHeight: 25.5,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    letterSpacing: 0.4,
+  },
+  flashBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  flashText: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    lineHeight: 22,
+    fontWeight: '800',
+  },
+  flashTextActive: {
+    color: '#FFE18B',
+  },
+  bottomOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingTop: 32,
+    paddingHorizontal: 24,
+    gap: 16,
+  },
+  thumbRow: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 8,
+    paddingBottom: 32,
+  },
   thumbWrap: { position: 'relative' },
-  thumb: { width: 58, height: 78, borderRadius: appTheme.radius.md, backgroundColor: '#FFFFFF44' },
+  thumb: {
+    width: 48,
+    height: 64,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: '#9CA3AF',
+    shadowColor: '#000000',
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 5,
+  },
+  thumbPlaceholder: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  counterTile: {
+    width: 48,
+    height: 64,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(0,0,0,0.44)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  counterTileActive: {
+    backgroundColor: 'rgba(17,24,39,0.6)',
+  },
+  counterText: {
+    color: 'rgba(255,255,255,0.92)',
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 16,
+  },
   removeBtn: {
     position: 'absolute',
-    top: -5,
-    right: -5,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#111827AA',
+    top: -6,
+    right: -6,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  removeText: { color: '#FFFFFF', fontSize: 9, fontWeight: '700' },
+  removeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700', lineHeight: 11 },
   bottomRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  importGroup: {
+    width: 80,
+    alignItems: 'center',
+    gap: 4,
+  },
   importBtn: {
-    width: 84,
-    height: 54,
-    borderRadius: appTheme.radius.md,
-    backgroundColor: '#00000055',
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 5,
   },
-  importText: { color: '#FFFFFF', fontSize: appTheme.typography.small.fontSize, fontWeight: '600' },
+  importIconFrame: {
+    width: 20,
+    height: 20,
+    borderWidth: 1.4,
+    borderColor: '#F3F4F6',
+    borderRadius: 3,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+    paddingBottom: 3,
+    paddingHorizontal: 2,
+  },
+  importIconDot: {
+    position: 'absolute',
+    top: 3,
+    left: 3,
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#F3F4F6',
+  },
+  importIconHill: {
+    height: 6,
+    backgroundColor: '#F3F4F6',
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 2,
+    transform: [{ skewX: '-26deg' }],
+  },
+  importText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '500',
+    lineHeight: 16.5,
+    textShadowColor: 'rgba(0,0,0,0.05)',
+    textShadowRadius: 1,
+    textShadowOffset: { width: 0, height: 1 },
+  },
   captureBtn: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    borderWidth: 4,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 5,
     borderColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 7,
   },
-  captureInner: { width: 68, height: 68, borderRadius: 34, backgroundColor: '#FFFFFF' },
-  placeholder: { width: 84 },
+  captureBtnDisabled: {
+    opacity: 0.7,
+  },
+  captureInner: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#FFFFFF' },
+  analyzeGroup: {
+    width: 103.88,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  analyzeBtn: {
+    width: 103.88,
+    height: 44,
+    borderRadius: 32,
+    backgroundColor: '#8C2BEE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  analyzeBtnDisabled: {
+    opacity: 0.5,
+  },
+  analyzeBtnText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+    lineHeight: 22,
+    letterSpacing: 0,
+  },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#11182755',

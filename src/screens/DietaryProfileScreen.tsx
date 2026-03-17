@@ -16,6 +16,18 @@ import { typography } from '../ui/typography';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DietaryProfile'>;
 const preferences: DietaryPreference[] = ['Vegan or vegetarian', 'Pescatarian', 'Semi-vegetarian', 'Gluten-free', 'Lactose-free', 'Keto', 'Paleo (whole foods)'];
+const POPULAR_DISLIKE_PINS: readonly string[] = [
+  'Spicy',
+  'Avocado',
+  'Coriander',
+  'Mushrooms',
+  'Onions',
+  'Garlic',
+  'Olives',
+  'Seafood',
+  'Mayonnaise',
+  'Tomatoes',
+];
 
 function normalizeDislikeKey(s: string): string {
   return s.trim().toLowerCase();
@@ -23,7 +35,7 @@ function normalizeDislikeKey(s: string): string {
 
 export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
   const insets = useSafeAreaInsets();
-  const scrollPaddingBottom = getCTATotalHeight(insets.bottom) + spec.spacing[12];
+  const scrollPaddingBottom = getCTATotalHeight(insets.bottom) + spec.spacing[12] / 2;
   const [selectedPreferences, setSelectedPreferences] = React.useState<DietaryPreference[]>([]);
   const [selectedAllergies, setSelectedAllergies] = React.useState<Allergy[]>([]);
   const [dislikes, setDislikes] = React.useState<string[]>([]);
@@ -46,22 +58,35 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
   const togglePref = (v: DietaryPreference): void => setSelectedPreferences((p) => (p.includes(v) ? p.filter((x) => x !== v) : [...p, v]));
   const toggleAllergy = (v: Allergy): void => setSelectedAllergies((p) => (p.includes(v) ? p.filter((x) => x !== v) : [...p, v]));
 
-  const addDislike = (): void => {
-    const trimmed = dislikeInput.trim();
+  const addDislikeValue = React.useCallback((value: string): void => {
+    const trimmed = value.trim();
     if (!trimmed) return;
     const key = normalizeDislikeKey(trimmed);
-    if (dislikes.some((d) => normalizeDislikeKey(d) === key)) return;
-    setDislikes((prev) => [...prev, trimmed]);
+    setDislikes((prev) => {
+      const existing = prev.find((d) => normalizeDislikeKey(d) === key);
+      if (existing) {
+        return prev.filter((d) => normalizeDislikeKey(d) !== key);
+      }
+      return [...prev, trimmed];
+    });
+  }, []);
+
+  const addDislike = (): void => {
+    addDislikeValue(dislikeInput);
     setDislikeInput('');
   };
-  const removeDislike = (item: string): void => setDislikes((prev) => prev.filter((d) => d !== item));
+  const toggleDislikePin = (label: string): void => {
+    addDislikeValue(label);
+  };
+  const dislikePins = React.useMemo(() => {
+    const popularKeys = new Set(POPULAR_DISLIKE_PINS.map((pin) => normalizeDislikeKey(pin)));
+    const customPins = dislikes.filter((pin) => !popularKeys.has(normalizeDislikeKey(pin)));
+    return [...POPULAR_DISLIKE_PINS, ...customPins];
+  }, [dislikes]);
 
   const goHome = (): void => navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
   const onSave = async (): Promise<void> => {
-    const user = await userRepo.getUser();
-    if (!user) return navigation.replace('GoalSelection');
-    await userRepo.saveUser({
-      ...user,
+    await userRepo.patchUser({
       dietaryPreferences: selectedPreferences,
       allergies: selectedAllergies,
       dislikes,
@@ -70,7 +95,7 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
   };
 
   return (
-    <Screen hasBottomCTA>
+    <Screen safeBottom={false}>
       <View style={styles.headerRow}>
         <View style={styles.headerSpacer} />
         <View style={styles.stepIndicator}>
@@ -90,18 +115,6 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
       >
         <Text style={styles.title} maxFontSizeMultiplier={1.2}>Dietary profile</Text>
         <Text style={styles.subtitle} maxFontSizeMultiplier={1.2}>Optional. You can change this later.</Text>
-        <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.2}>Diet preferences</Text>
-        <View style={styles.chipsWrap}>
-          <Chip label="None" selected={selectedPreferences.length === 0} onPress={() => setSelectedPreferences([])} />
-          {preferences.map((pref) => <Chip key={pref} label={pref} selected={selectedPreferences.includes(pref)} onPress={() => togglePref(pref)} />)}
-        </View>
-        <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.2}>Common allergies</Text>
-        <View style={styles.chipsWrap}>
-          <Chip label="None" selected={selectedAllergies.length === 0} onPress={() => setSelectedAllergies([])} />
-          {ALLERGY_OPTIONS.map((allergy) => (
-            <Chip key={allergy} label={allergy} selected={selectedAllergies.includes(allergy)} onPress={() => toggleAllergy(allergy)} />
-          ))}
-        </View>
         <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.2}>Dislikes</Text>
         <View style={styles.dislikeRow}>
           <TextInput
@@ -119,14 +132,26 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
             <Text style={styles.addDislikeBtnText}>Add</Text>
           </Pressable>
         </View>
+        <View style={[styles.chipsWrap, styles.popularPinsWrap]}>
+          {dislikePins.map((label) => (
+            <Chip
+              key={label}
+              label={label}
+              selected={dislikes.some((d) => normalizeDislikeKey(d) === normalizeDislikeKey(label))}
+              onPress={() => toggleDislikePin(label)}
+            />
+          ))}
+        </View>
+        <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.2}>Diet preferences</Text>
         <View style={styles.chipsWrap}>
-          {dislikes.map((label) => (
-            <View key={label} style={styles.removableChip}>
-              <Text style={styles.removableChipText} numberOfLines={1}>{label}</Text>
-              <Pressable hitSlop={8} onPress={() => removeDislike(label)} style={styles.removeChipBtn}>
-                <Text style={styles.removeChipIcon}>×</Text>
-              </Pressable>
-            </View>
+          <Chip label="None" selected={selectedPreferences.length === 0} onPress={() => setSelectedPreferences([])} />
+          {preferences.map((pref) => <Chip key={pref} label={pref} selected={selectedPreferences.includes(pref)} onPress={() => togglePref(pref)} />)}
+        </View>
+        <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.2}>Common allergies</Text>
+        <View style={styles.chipsWrap}>
+          <Chip label="None" selected={selectedAllergies.length === 0} onPress={() => setSelectedAllergies([])} />
+          {ALLERGY_OPTIONS.map((allergy) => (
+            <Chip key={allergy} label={allergy} selected={selectedAllergies.includes(allergy)} onPress={() => toggleAllergy(allergy)} />
           ))}
         </View>
       </ScrollView>
@@ -159,6 +184,7 @@ const styles = StyleSheet.create({
   subtitle: { ...typography.body, color: appTheme.colors.muted, marginTop: spec.spacing[8] },
   sectionTitle: { ...typography.h2, marginTop: spec.spacing[24] },
   chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spec.spacing[12] },
+  popularPinsWrap: { marginTop: spec.spacing[4] },
   dislikeRow: { flexDirection: 'row', alignItems: 'center', gap: spec.spacing[8], marginTop: spec.spacing[4] },
   dislikeInput: {
     flex: 1,
@@ -179,19 +205,4 @@ const styles = StyleSheet.create({
     backgroundColor: appTheme.colors.ink,
   },
   addDislikeBtnText: { ...typography.bodySemibold, color: appTheme.colors.primaryText },
-  removableChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: spec.chipHeight,
-    paddingLeft: spec.chipPaddingX,
-    paddingRight: spec.spacing[4],
-    borderRadius: spec.chipRadius,
-    backgroundColor: appTheme.colors.surface,
-    borderWidth: 1,
-    borderColor: appTheme.colors.border,
-    maxWidth: '100%',
-  },
-  removableChipText: { ...typography.caption, color: appTheme.colors.textPrimary, maxWidth: 160 },
-  removeChipBtn: { padding: spec.spacing[4], marginLeft: spec.spacing[4] },
-  removeChipIcon: { fontSize: 20, color: appTheme.colors.muted, fontWeight: '600' },
 });

@@ -97,6 +97,8 @@ export type TrialState = {
   isPremium: boolean;
   scansUsedTodayCount: number;
   scansUsedTodayDate?: string;
+  /** Timestamp (ms) until which AI quota is considered exhausted (429 across all models). */
+  aiQuotaExhaustedUntil?: number;
 };
 export type ChatMessage = { id: string; role: 'system' | 'user' | 'assistant'; text: string; createdAt: string; sourceKey?: string };
 

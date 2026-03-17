@@ -37,7 +37,7 @@ export function ChatScreen({ navigation, route }: Props): React.JSX.Element {
   useFocusEffect(React.useCallback(() => { void loadData(); return undefined; }, [loadData]));
   const askBuddy = async (): Promise<void> => {
     const question = input.trim();
-    if (!question) return;
+    if (!question || sending) return;
     if (!isPremium && !TEST_MODE) {
       navigation.navigate('Paywall', { source: 'chat' });
       return;
@@ -52,6 +52,9 @@ export function ChatScreen({ navigation, route }: Props): React.JSX.Element {
       const updatedMessages = await chatRepo.listMessages();
       setMessages(updatedMessages);
       requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') return;
+      throw e;
     } finally {
       setSending(false);
     }

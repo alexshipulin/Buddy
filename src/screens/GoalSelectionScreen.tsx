@@ -27,15 +27,17 @@ export function GoalSelectionScreen({ navigation }: Props): React.JSX.Element {
   const cardGap = spec.spacing[16];
   const cardWidth = (contentWidth - cardGap) / 2;
   const scrollPaddingBottom = getCTATotalHeight(insets.bottom) + spec.spacing[12];
+  const titleFontSize = Math.max(24, Math.min(30, contentWidth * 0.082));
+  const titleLineHeight = Math.round(titleFontSize * 1.18);
 
   const onContinue = async (): Promise<void> => {
     if (!selected) return;
-    await userRepo.saveUser({ goal: selected, dietaryPreferences: [], allergies: [], dislikes: [] });
+    await userRepo.patchUser({ goal: selected });
     navigation.navigate('DietaryProfile');
   };
 
   const onSkip = (): void => {
-    userRepo.saveUser({ goal: 'Maintain weight', dietaryPreferences: [], allergies: [], dislikes: [] }).then(() => {
+    userRepo.patchUser({ goal: 'Maintain weight' }).then(() => {
       navigation.navigate('DietaryProfile');
     });
   };
@@ -63,8 +65,16 @@ export function GoalSelectionScreen({ navigation }: Props): React.JSX.Element {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.content}>
-          <Text style={styles.title} maxFontSizeMultiplier={1.2}>What should I focus on?</Text>
-          <Text style={styles.subtitle} maxFontSizeMultiplier={1.2}>Pick a focus - you can change it anytime</Text>
+          <Text
+            style={[styles.title, { width: contentWidth, fontSize: titleFontSize, lineHeight: titleLineHeight }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.76}
+            maxFontSizeMultiplier={1.1}
+          >
+            What should I focus on?
+          </Text>
+          <Text style={[styles.subtitle, { width: contentWidth }]} maxFontSizeMultiplier={1.2}>Pick a focus - you can change it anytime</Text>
           <View style={[styles.listGrid, { width: contentWidth }]}>
             {goals.map((goal, index) => {
               const isSelected = selected === goal;
@@ -124,7 +134,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
   },
-  title: { ...typography.largeTitle, textAlign: 'center', marginTop: 0 },
+  title: { ...typography.largeTitle, textAlign: 'center', marginTop: 0, alignSelf: 'center' },
   subtitle: { ...typography.body, color: appTheme.colors.muted, textAlign: 'center', marginTop: spec.spacing[8], marginBottom: 0 },
   listGrid: { 
     flexDirection: 'row', 

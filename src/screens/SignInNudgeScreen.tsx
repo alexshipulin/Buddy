@@ -7,15 +7,13 @@ import { Card } from '../components/Card';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { SecondaryButton } from '../components/SecondaryButton';
 import { appTheme } from '../design/theme';
-import { appPrefsRepo, userRepo } from '../services/container';
+import { appPrefsRepo } from '../services/container';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SignInNudge'>;
 
 export function SignInNudgeScreen({ navigation, route }: Props): React.JSX.Element {
   const onContinue = async (): Promise<void> => {
-    await userRepo.markSignedIn();
-    await appPrefsRepo.markSignInNudgeDismissed();
-    navigation.goBack();
+    navigation.navigate('Login');
   };
   const onNotNow = async (): Promise<void> => {
     if (route.params?.source === 'auto') await appPrefsRepo.markSignInNudgeDismissed();

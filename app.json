@@ -2,6 +2,7 @@
   "expo": {
     "name": "Buddy",
     "slug": "buddy-mvp",
+    "scheme": "buddy",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -9,13 +10,34 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": true
+      "bundleIdentifier": "com.alexshipulin.buddy",
+      "usesAppleSignIn": true,
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
-    "android": {},
+    "android": {
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO"
+      ]
+    },
     "plugins": [
       "expo-camera",
       "expo-image-picker",
       "expo-media-library"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "0d8b7612-f3b1-4d4e-965a-827b45e36492"
+      }
+    }
   }
 }
