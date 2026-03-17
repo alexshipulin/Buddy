@@ -531,6 +531,75 @@ function testRelativeProteinFallbackPromotesByProteinDensityWhenStrictHasNoCandi
   );
 }
 
+function testLowProteinGoesToCautionForAllMuscleGoals(): void {
+  const muscleTargets = buildFallbackTargets('Gain muscle');
+  // Simulates real case: 18:05 (dinner), nothing eaten yet.
+  const dinnerState = createEmptyDailyNutritionState('2026-03-17');
+
+  const result = rankExtractedDishes({
+    dishes: [
+      dish('Croissant', {
+        estimatedCalories: 350,
+        estimatedProteinG: 7,
+        estimatedCarbsG: 40,
+        estimatedFatG: 20,
+        flags: { processed: true, refinedCarbHeavy: true },
+      }),
+      dish('Cinnamon bun', {
+        estimatedCalories: 400,
+        estimatedProteinG: 6,
+        estimatedCarbsG: 60,
+        estimatedFatG: 15,
+        flags: { dessert: true, processed: true },
+      }),
+      dish('Chicken katsu sando', {
+        estimatedCalories: 650,
+        estimatedProteinG: 40,
+        estimatedCarbsG: 50,
+        estimatedFatG: 35,
+        flags: { leanProtein: true },
+      }),
+      dish('Salmon focaccia', {
+        estimatedCalories: 550,
+        estimatedProteinG: 30,
+        estimatedCarbsG: 50,
+        estimatedFatG: 25,
+        flags: { leanProtein: true },
+      }),
+    ],
+    goal: 'Gain muscle',
+    targets: muscleTargets,
+    dailyState: dinnerState,
+    selectedAllergies: [],
+    selectedDislikes: [],
+    now: new Date(2026, 2, 17, 18, 5, 0), // dinner time
+  });
+
+  // Croissant (7g P) and Cinnamon bun (6g P) must not be TOP.
+  assert(
+    !result.top.some((r) => r.dish.name === 'Croissant'),
+    'Croissant (7g protein) must NOT be TOP for Gain muscle'
+  );
+  assert(
+    !result.top.some((r) => r.dish.name === 'Cinnamon bun'),
+    'Cinnamon bun (6g protein) must NOT be TOP for Gain muscle'
+  );
+  // High-protein dishes must be in TOP.
+  assert(
+    result.top.some((r) => r.dish.name === 'Chicken katsu sando'),
+    'Chicken katsu sando (40g protein) MUST be TOP for Gain muscle'
+  );
+  assert(
+    result.top.some((r) => r.dish.name === 'Salmon focaccia'),
+    'Salmon focaccia (30g protein) MUST be TOP for Gain muscle'
+  );
+  // TOP sorted by descending protein/score.
+  assert(
+    result.top[0].dish.name === 'Chicken katsu sando',
+    'Highest protein dish should rank #1'
+  );
+}
+
 export function runRecommendationRankingTests(): void {
   testFirstMealHighFatDessertGoesCaution();
   testSecondMealFatPressureMovesToCaution();
@@ -548,4 +617,5 @@ export function runRecommendationRankingTests(): void {
   testTopRescueDoesNotRunWhenTopAlreadyExists();
   testTopRescueFiltersSevereQualityLowProteinAndAllergenUnclear();
   testRelativeProteinFallbackPromotesByProteinDensityWhenStrictHasNoCandidates();
+  testLowProteinGoesToCautionForAllMuscleGoals();
 }

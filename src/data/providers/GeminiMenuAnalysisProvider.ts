@@ -1,9 +1,12 @@
-import { DishPick, MenuScanResult, UserProfile, DishRecommendation } from '../../domain/models';
-import { analyzeMenuWithGemini, MenuAnalysisInvalidJsonError } from '../../ai/menuAnalysis';
-import { classifyDishes } from '../../services/classifyDishes';
+import { MenuScanResult, UserProfile } from '../../domain/models';
+import { analyzeMenuWithGemini, MenuAnalysisInvalidJsonError, type RawDish } from '../../ai/menuAnalysis';
 import { uriToBase64 } from '../../services/aiService';
-import { computeTodayMacrosUseCase } from '../../services/computeTodayMacrosUseCase';
-import { historyRepo } from '../../services/container';
+import {
+  buildFallbackTargets,
+  rankExtractedDishes,
+  rankedDishToDishPick,
+} from '../../domain/recommendationRanking';
+import { rawDishToExtracted } from '../../services/rawDishAdapter';
 import { createId } from '../../utils/id';
 import { MenuAnalysisContext, MenuAnalysisProvider } from './MenuAnalysisProvider';
 import { getCached, hashCacheKey, setCache, TTL_24H } from '../../ai/aiCache';
@@ -22,23 +25,6 @@ function detectMimeType(uri: string): string {
   if (normalizedUri.endsWith('.webp')) return 'image/webp';
   if (normalizedUri.endsWith('.heic') || normalizedUri.endsWith('.heif')) return 'image/heic';
   return 'image/jpeg';
-}
-
-function dishRecToDishPick(dish: DishRecommendation): DishPick {
-  return {
-    name: dish.name,
-    shortReason: dish.reasonShort,
-    pins: dish.tags,
-    confidencePercent: 80,
-    dietBadges: [],
-    allergenNote: null,
-    noLine: null,
-    estimatedCalories: dish.nutrition?.caloriesKcal ?? null,
-    estimatedProteinG: dish.nutrition?.proteinG ?? null,
-    estimatedCarbsG: dish.nutrition?.carbsG ?? null,
-    estimatedFatG: dish.nutrition?.fatG ?? null,
-    ...(dish.contextNote ? { contextNote: dish.contextNote } : {}),
-  } as DishPick;
 }
 
 export class GeminiMenuAnalysisProvider implements MenuAnalysisProvider {
@@ -76,15 +62,37 @@ export class GeminiMenuAnalysisProvider implements MenuAnalysisProvider {
           mimeType,
           userGoal: user.goal,
           userDislikes: user.dislikes ?? [],
+          selectedAllergies: user.allergies ?? [],
         });
         await setCache(cacheKey, rawAnalysis, TTL_24H);
       }
 
-      const eatenToday = await computeTodayMacrosUseCase(new Date(), { historyRepo });
-      const classified = classifyDishes(rawAnalysis.dishes, user, eatenToday, new Date());
-      const topPicks = classified.topPicks.map(dishRecToDishPick);
-      const caution = classified.caution.map(dishRecToDishPick);
-      const avoid = classified.avoid.map(dishRecToDishPick);
+      // Используем targets и dailyState из context (уже вычислены в analyzeMenuUseCase)
+      const targets = context?.targets ?? buildFallbackTargets(user.goal);
+      const dailyState = context?.dailyState ?? {
+        dateKey: new Date().toISOString().slice(0, 10),
+        consumed: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+        mealsLoggedCount: 0,
+        firstMealTime: null,
+        lastMealTime: null,
+      };
+
+      const extractedDishes = rawAnalysis.dishes.map((dish) =>
+        'nutrition' in dish ? rawDishToExtracted(dish as unknown as RawDish) : dish
+      );
+      const ranked = rankExtractedDishes({
+        dishes: extractedDishes,
+        goal: user.goal,
+        targets,
+        dailyState,
+        selectedAllergies: user.allergies ?? [],
+        selectedDislikes: user.dislikes ?? [],
+        now: new Date(),
+      });
+
+      const topPicks = ranked.top.map((r) => rankedDishToDishPick(r, user.allergies ?? []));
+      const caution = ranked.caution.map((r) => rankedDishToDishPick(r, user.allergies ?? []));
+      const avoid = ranked.avoid.map((r) => rankedDishToDishPick(r, user.allergies ?? []));
       const summaryText = `Buddy ranked ${rawAnalysis.dishes.length} dishes for ${user.goal.toLowerCase()} and your preferences.`;
 
       return {

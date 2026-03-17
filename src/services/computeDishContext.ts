@@ -57,7 +57,7 @@ export function computeDishContext(params: {
 
   if (goal === 'Lose fat') {
     if (isOverLimit(eatenToday.caloriesKcal, dailyTargets.caloriesKcal)) {
-      return withDowngradeRule("You've hit your calorie limit today", true);
+      return { contextNote: "You've hit your calorie limit today", shouldDowngrade: true };
     }
 
     if (isOverLimit(eatenToday.carbsG, dailyTargets.carbsG)) {
@@ -90,7 +90,13 @@ export function computeDishContext(params: {
 
   if (goal === 'Gain muscle') {
     if (isOverLimit(eatenToday.caloriesKcal, dailyTargets.caloriesKcal)) {
-      return withDowngradeRule("You've hit your calorie limit today", true);
+      // Hard limit - keep active even for last meal.
+      return { contextNote: "You've hit your calorie limit today", shouldDowngrade: true };
+    }
+
+    // Protein floor - keep active even for last meal.
+    if (dish.nutrition.proteinG < 20) {
+      return { contextNote: 'Low protein — not ideal for muscle gain', shouldDowngrade: true };
     }
 
     if (
@@ -128,7 +134,27 @@ export function computeDishContext(params: {
 
   if (goal === 'Maintain weight') {
     if (isOverLimit(eatenToday.caloriesKcal, dailyTargets.caloriesKcal)) {
-      return withDowngradeRule("You've hit your calorie limit today", true);
+      return { contextNote: "You've hit your calorie limit today", shouldDowngrade: true };
+    }
+
+    if (
+      mealsRemainingAfter >= 1 &&
+      exceedsRemainder(dish.nutrition.caloriesKcal, remaining.caloriesKcal)
+    ) {
+      return withDowngradeRule('Takes up most of your remaining calories', true);
+    }
+
+    return withDowngradeRule(undefined, false);
+  }
+
+  if (goal === 'Eat healthier') {
+    if (isOverLimit(eatenToday.caloriesKcal, dailyTargets.caloriesKcal)) {
+      return { contextNote: "You've hit your calorie limit today", shouldDowngrade: true };
+    }
+
+    // Downgrade low-protein dishes regardless of last meal.
+    if (dish.nutrition.proteinG < 18) {
+      return { contextNote: 'Low protein — add a protein source', shouldDowngrade: true };
     }
 
     if (

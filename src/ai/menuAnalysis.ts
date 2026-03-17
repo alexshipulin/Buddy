@@ -1,4 +1,5 @@
 import { requireApiKey, runWithFallback, sanitizeJsonText } from './geminiClient';
+import type { ExtractedDish } from '../domain/models';
 
 // Re-export for callers that catch this error (e.g. analyzeMenuUseCase).
 export class MenuAnalysisInvalidJsonError extends Error {
@@ -19,6 +20,10 @@ export const PRIMARY_MODEL = process.env.EXPO_PUBLIC_GEMINI_MODEL ?? 'gemini-2.5
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Backward-compatible shape used by legacy classifiers/adapters.
+ * Kept as a type export while extraction now returns `ExtractedDish`.
+ */
 export type RawDish = {
   name: string;
   nutrition: { caloriesKcal: number; proteinG: number; carbsG: number; fatG: number };
@@ -35,13 +40,13 @@ export type RawDish = {
   short_description: string;
 };
 
-export type MenuRawAnalysis = {
-  dishes: RawDish[];
+export type MenuExtractionAIResponse = {
+  dishes: ExtractedDish[];
 };
 
 // ── JSON Schema for Gemini responseSchema ─────────────────────────────────────
 
-const MENU_RAW_SCHEMA = {
+const MENU_EXTRACTION_SCHEMA = {
   type: 'object',
   properties: {
     dishes: {
@@ -50,40 +55,45 @@ const MENU_RAW_SCHEMA = {
         type: 'object',
         properties: {
           name: { type: 'string' },
-          nutrition: {
+          menuSection: { type: 'string' },
+          shortDescription: { type: 'string' },
+          estimatedCalories: { type: 'number' },
+          estimatedProteinG: { type: 'number' },
+          estimatedCarbsG: { type: 'number' },
+          estimatedFatG: { type: 'number' },
+          confidencePercent: { type: 'number' },
+          flags: {
             type: 'object',
             properties: {
-              caloriesKcal: { type: 'number' },
-              proteinG: { type: 'number' },
-              carbsG: { type: 'number' },
-              fatG: { type: 'number' },
+              leanProtein: { type: 'boolean' },
+              veggieForward: { type: 'boolean' },
+              wholeFood: { type: 'boolean' },
+              fried: { type: 'boolean' },
+              dessert: { type: 'boolean' },
+              sugaryDrink: { type: 'boolean' },
+              refinedCarbHeavy: { type: 'boolean' },
+              highFatSauce: { type: 'boolean' },
+              processed: { type: 'boolean' }
             },
-            required: ['caloriesKcal', 'proteinG', 'carbsG', 'fatG'],
+            required: ['leanProtein','veggieForward','wholeFood','fried','dessert','sugaryDrink','refinedCarbHeavy','highFatSauce','processed']
           },
-          detected_dislikes: { type: 'array', items: { type: 'string' } },
-          detected_allergies: { type: 'array', items: { type: 'string' } },
-          diet_flags: {
+          allergenSignals: {
             type: 'object',
             properties: {
-              vegan: { type: 'boolean' },
-              vegetarian: { type: 'boolean' },
-              gluten_free: { type: 'boolean' },
-              lactose_free: { type: 'boolean' },
-              keto: { type: 'boolean' },
-              paleo: { type: 'boolean' },
-            },
-            required: ['vegan', 'vegetarian', 'gluten_free', 'lactose_free', 'keto', 'paleo'],
+              contains: { type: 'array', items: { type: 'string' } },
+              unclear: { type: 'boolean' },
+              noListedAllergen: { type: 'boolean' }
+            }
           },
-          short_description: { type: 'string' },
+          dislikes: {
+            type: 'object',
+            properties: {
+              containsDislikedIngredient: { type: 'boolean' },
+              removableDislikedIngredients: { type: 'array', items: { type: 'string' } }
+            }
+          }
         },
-        required: [
-          'name',
-          'nutrition',
-          'detected_dislikes',
-          'detected_allergies',
-          'diet_flags',
-          'short_description',
-        ],
+        required: ['name','estimatedCalories','estimatedProteinG','estimatedCarbsG','estimatedFatG','confidencePercent','flags']
       },
     },
   },
@@ -97,21 +107,39 @@ export async function analyzeMenuWithGemini(params: {
   mimeType: string;
   userGoal: string;
   userDislikes: string[];
-}): Promise<MenuRawAnalysis> {
+  selectedAllergies: string[];
+}): Promise<MenuExtractionAIResponse> {
   const key = requireApiKey();
 
   const prompt = `Return ONLY JSON. No markdown. No extra text.
 
 User goal: ${params.userGoal}
 User dislikes (check these specifically): ${params.userDislikes.length > 0 ? params.userDislikes.join(', ') : 'none'}
+User allergies (check these specifically): ${params.selectedAllergies.length > 0 ? params.selectedAllergies.join(', ') : 'none'}
 
 Detect from the menu photo each dish and for each return:
 - name: exact dish name as written on the menu
-- nutrition: estimated calories, protein, carbs, fat (assume standard restaurant portion ~300-400g)
-- detected_dislikes: match ONLY from this list: Spicy, Avocado, Coriander, Mushrooms, Onions, Garlic, Olives, Seafood, Mayonnaise, Tomatoes
-- detected_allergies: match ONLY from this list: Milk, Eggs, Fish, Crustacean shellfish, Tree nuts, Peanuts, Wheat, Soy, Sesame, Celery, Lupin, Molluscs, Mustard, Sulphites
-- diet_flags: set true only if the dish genuinely qualifies
-- short_description: 1-2 sentences from a diet perspective relevant to the user goal`;
+- menuSection: section name from menu (e.g. "Starters", "Mains") or null
+- shortDescription: 1-2 sentences about this dish from diet perspective for the user goal
+- estimatedCalories, estimatedProteinG, estimatedCarbsG, estimatedFatG: estimated macros (standard restaurant portion ~300-400g)
+- confidencePercent: your confidence 50-95 as integer
+- flags: set true only if genuinely applies:
+    leanProtein: grilled/baked lean meat or fish without heavy sauce
+    veggieForward: vegetables are main component
+    wholeFood: minimally processed, whole ingredients
+    fried: deep-fried, pan-fried, or battered
+    dessert: sweet dessert dish
+    sugaryDrink: sweetened beverages
+    refinedCarbHeavy: white bread, white rice, pasta as dominant component
+    highFatSauce: cream sauce, gravy, teriyaki glaze, thick dressing
+    processed: clearly processed/packaged food, fast food style, processed meat
+- allergenSignals:
+    contains: list only allergens from this list that are definitely present: ${params.selectedAllergies.length > 0 ? params.selectedAllergies.join(', ') : 'none selected'}
+    unclear: true if allergen presence is uncertain for user's selected allergies
+    noListedAllergen: true if none of user's selected allergens are present
+- dislikes:
+    containsDislikedIngredient: true if dish contains any of user's dislikes
+    removableDislikedIngredients: list of disliked ingredients that can be omitted on request`;
 
   const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [
     { text: prompt },
@@ -122,7 +150,7 @@ Detect from the menu photo each dish and for each return:
     contents: [{ role: 'user', parts }],
     generationConfig: {
       responseMimeType: 'application/json',
-      responseSchema: MENU_RAW_SCHEMA,
+      responseSchema: MENU_EXTRACTION_SCHEMA,
       temperature: 0.2,
       maxOutputTokens: 16384,
       thinkingConfig: { thinkingBudget: 0 },
@@ -179,5 +207,5 @@ Detect from the menu photo each dish and for each return:
     throw new MenuAnalysisInvalidJsonError({ raw: rawOutput, model: usedModel, message: 'Response missing dishes array' });
   }
 
-  return data as MenuRawAnalysis;
+  return data as MenuExtractionAIResponse;
 }
