@@ -1,4 +1,4 @@
-import { DishPin, DishRecommendation, MacroTotals, UserProfile } from '../domain/models';
+import { DishPin, DishRecommendation, Goal, MacroTotals, UserProfile } from '../domain/models';
 import { RawDish } from '../ai/menuAnalysis';
 import { computePersonalTargets } from './computePersonalTargets';
 import { computeDishContext } from './computeDishContext';
@@ -35,6 +35,65 @@ function checkDietMismatch(
     if (pref === 'Paleo (whole foods)' && !safeFlags.paleo) return true;
   }
   return false;
+}
+
+function qualityMismatch(
+  dish: RawDish,
+  goal: Goal,
+  fatOverTolerance: boolean,
+  isSmallSide: boolean,
+  proteinAlmostDone: boolean,
+  isEvening: boolean,
+  firstMealFlex: boolean
+): string | null {
+  const flags: Partial<RawDish['cooking_flags']> = dish.cooking_flags ?? {};
+  const nut = dish.nutrition ?? { caloriesKcal: 0, proteinG: 0, carbsG: 0, fatG: 0 };
+
+  switch (goal) {
+    case 'Gain muscle':
+      if (fatOverTolerance && nut.fatG > 45) return 'Too much fat for muscle gain';
+      if (isSmallSide) return null;
+      if (flags.high_sugar && !(proteinAlmostDone && isEvening))
+        return 'High sugar — not ideal for muscle gain';
+      if (flags.fried) return 'Fried option — consider occasionally';
+      if (firstMealFlex && !flags.high_sugar) return null;
+      if (nut.proteinG < 15 && nut.caloriesKcal >= 150) return 'Low protein for muscle gain';
+      return null;
+
+    case 'Lose fat':
+      // High calorie items always caution
+      if (nut.caloriesKcal > 650) return 'High calorie for fat loss goal';
+      // Fried
+      if (flags.fried) return 'Fried option — high in fat and calories';
+      // High sugar / desserts
+      if (flags.high_sugar) return 'High sugar — avoid for fat loss';
+      // Heavy sauce
+      if (flags.heavy_sauce && nut.fatG > 20) return 'Rich sauce adds significant fat';
+      return null;
+
+    case 'Maintain weight':
+      // Very high calorie
+      if (nut.caloriesKcal > 750) return 'Large meal — balance with lighter choices';
+      // Fried
+      if (flags.fried) return 'Fried option — enjoy occasionally';
+      // High sugar
+      if (flags.high_sugar) return 'High sugar — occasional treat';
+      return null;
+
+    case 'Eat healthier':
+      // Processed
+      if (flags.processed) return 'Processed food — not ideal for clean eating';
+      // Fried
+      if (flags.fried) return 'Fried — better grilled or baked';
+      // High sugar
+      if (flags.high_sugar) return 'High sugar content';
+      // Heavy sauce
+      if (flags.heavy_sauce) return 'Heavy sauce — consider lighter option';
+      return null;
+
+    default:
+      return null;
+  }
 }
 
 function mapDish(
@@ -110,6 +169,32 @@ export function classifyDishes(
     // Step 3: CAUTION — diet preference mismatch
     if (checkDietMismatch(dish.diet_flags, user.dietaryPreferences)) {
       caution.push(mapDish(dish, 'caution', user, dishContext.contextNote));
+      continue;
+    }
+
+    // Step 3.5: CAUTION — quality mismatch for goal
+    const fatOverTolerance = Boolean(dailyTargets) && eatenToday.fatG > dailyTargets.fatG * 1.4;
+    const isSmallSide = dish.nutrition.caloriesKcal < 250 && dish.nutrition.fatG < 20;
+    const proteinAlmostDone = Boolean(dailyTargets) && eatenToday.proteinG >= 0.9 * dailyTargets.proteinG;
+    const isEvening = mealPeriod === 'dinner';
+    const firstMealFlex =
+      mealPeriod === 'breakfast' &&
+      eatenToday.caloriesKcal === 0 &&
+      eatenToday.proteinG === 0 &&
+      eatenToday.carbsG === 0 &&
+      eatenToday.fatG === 0;
+
+    const qualityIssue = qualityMismatch(
+      dish,
+      user.goal,
+      fatOverTolerance,
+      isSmallSide,
+      proteinAlmostDone,
+      isEvening,
+      firstMealFlex
+    );
+    if (qualityIssue) {
+      caution.push(mapDish(dish, 'caution', user, qualityIssue));
       continue;
     }
 

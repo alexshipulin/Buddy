@@ -42,42 +42,68 @@ export function computeDishContext(params: {
   const mealsLeft = getMealsRemainingAfter(mealPeriod);
   const nut = dish.nutrition;
 
-  function result(note: string, downgrade: boolean): DishContextResult {
-    return { contextNote: note, shouldDowngrade: downgrade && !last };
+  // For "already over" situations — downgrade applies even at dinner
+  function hardResult(note: string): DishContextResult {
+    return { contextNote: note, shouldDowngrade: true };
+  }
+
+  // For "future pressure" situations — downgrade suppressed at last meal
+  function softResult(note: string, downgrade: boolean): DishContextResult {
+    const shouldDowngrade = downgrade ? (last ? false : true) : false;
+    return { contextNote: note, shouldDowngrade };
+  }
+
+  // Universal: if fat target already exceeded and dish is high in fat → downgrade
+  if (eatenToday.fatG > dailyTargets.fatG && nut.fatG > 20) {
+    return hardResult('Already over fat goal today — choose lower fat');
   }
 
   if (goal === 'Lose fat') {
+    // Fat over
+    if (isOver(eatenToday.fatG, dailyTargets.fatG) && nut.fatG > 15) {
+      return hardResult('Already over fat goal today');
+    }
+    // Calories over
     if (isOver(eatenToday.caloriesKcal, dailyTargets.caloriesKcal)) {
-      return result("You've hit your calorie limit today", true);
+      return hardResult("You've hit your calorie limit today");
     }
+    // Carbs over
     if (isOver(eatenToday.carbsG, dailyTargets.carbsG)) {
-      return result("You're over your carb goal today", true);
+      return hardResult("You're over your carb goal today");
     }
+    // This dish takes >60% of remaining calories
     if (exceedsRemainder(nut.caloriesKcal, remaining.caloriesKcal) && mealsLeft >= 1) {
-      return result('Takes up most of your remaining calories', true);
+      return softResult('Takes up most of your remaining calories', true);
     }
+    // This dish takes >60% of remaining carbs
     if (exceedsRemainder(nut.carbsG, remaining.carbsG) && mealsLeft >= 1) {
-      return result('Too many carbs for the rest of your day', true);
+      return softResult('Too many carbs for the rest of your day', true);
     }
+    // Positive: still need protein
     if (eatenToday.proteinG < 0.4 * dailyTargets.proteinG && nut.proteinG >= 25) {
-      return result('Helps hit your protein goal', false);
+      return softResult('Helps hit your protein goal', false);
     }
     return { contextNote: undefined, shouldDowngrade: false };
   }
 
   if (goal === 'Gain muscle') {
+    // Fat already over target
+    if (isOver(eatenToday.fatG, dailyTargets.fatG) && nut.fatG > 20) {
+      return hardResult('Already over fat goal — pick lower fat option');
+    }
+    // Calories over
     if (isOver(eatenToday.caloriesKcal, dailyTargets.caloriesKcal)) {
-      return result("You've hit your calorie limit today", true);
+      return hardResult("You've hit your calorie limit today");
     }
+    // Carbs over at last meal
     if (isOver(eatenToday.carbsG, dailyTargets.carbsG) && last) {
-      return { contextNote: "You've had enough carbs today", shouldDowngrade: false };
+      return hardResult("You've had enough carbs today");
     }
+    // This dish takes up too much of remaining calories
     if (exceedsRemainder(nut.caloriesKcal, remaining.caloriesKcal) && mealsLeft >= 1) {
-      return result('Takes up most of your remaining calories', true);
+      return softResult('Takes up most of your remaining calories', true);
     }
-    if (eatenToday.proteinG < 0.4 * dailyTargets.proteinG && last && nut.proteinG >= 30) {
-      return { contextNote: 'You need more protein today — great pick', shouldDowngrade: false };
-    }
+    // Positive signal: still need protein
     if (eatenToday.proteinG < 0.4 * dailyTargets.proteinG && nut.proteinG >= 30) {
       return { contextNote: 'You need more protein today — great pick', shouldDowngrade: false };
     }
@@ -86,17 +112,20 @@ export function computeDishContext(params: {
 
   if (goal === 'Maintain weight') {
     if (isOver(eatenToday.caloriesKcal, dailyTargets.caloriesKcal)) {
-      return result("You've hit your calorie limit today", true);
+      return hardResult("You've hit your calorie limit today");
     }
     if (exceedsRemainder(nut.caloriesKcal, remaining.caloriesKcal) && mealsLeft >= 1) {
-      return result('Takes up most of your remaining calories', true);
+      return softResult('Takes up most of your remaining calories', true);
     }
     return { contextNote: undefined, shouldDowngrade: false };
   }
 
   if (goal === 'Eat healthier') {
+    if (isOver(eatenToday.fatG, dailyTargets.fatG) && nut.fatG > 20) {
+      return hardResult('Already over fat goal today');
+    }
     if (nut.caloriesKcal > 800) {
-      return result('Quite large — better as your one main meal', true);
+      return softResult('Quite large — better as your one main meal', true);
     }
     return { contextNote: undefined, shouldDowngrade: false };
   }
