@@ -1,10 +1,12 @@
-import { DishPick, MenuScanResult, UserProfile } from '../../domain/models';
+import { DishPick, MenuScanResult, UserProfile, DishRecommendation } from '../../domain/models';
 import { analyzeMenuWithGemini, MenuAnalysisInvalidJsonError } from '../../ai/menuAnalysis';
-import { getAvoidPinWhitelist, getCautionPinWhitelist, getDietMismatchPin, getPinWhitelist } from '../../domain/menuPins';
+import { classifyDishes } from '../../services/classifyDishes';
 import { uriToBase64 } from '../../services/aiService';
+import { computeTodayMacrosUseCase } from '../../services/computeTodayMacrosUseCase';
+import { historyRepo } from '../../services/container';
 import { createId } from '../../utils/id';
-import { MenuAnalysisValidationError } from '../../validation/menuAnalysisValidator';
-import { MenuAnalysisProvider } from './MenuAnalysisProvider';
+import { MenuAnalysisContext, MenuAnalysisProvider } from './MenuAnalysisProvider';
+import { getCached, hashCacheKey, setCache, TTL_24H } from '../../ai/aiCache';
 
 export class MenuAnalysisFailedError extends Error {
   constructor(message: string, public cause?: unknown) {
@@ -22,61 +24,81 @@ function detectMimeType(uri: string): string {
   return 'image/jpeg';
 }
 
+function dishRecToDishPick(dish: DishRecommendation): DishPick {
+  return {
+    name: dish.name,
+    shortReason: dish.reasonShort,
+    pins: dish.tags,
+    confidencePercent: 80,
+    dietBadges: [],
+    allergenNote: null,
+    noLine: null,
+    estimatedCalories: dish.nutrition?.caloriesKcal ?? null,
+    estimatedProteinG: dish.nutrition?.proteinG ?? null,
+    estimatedCarbsG: dish.nutrition?.carbsG ?? null,
+    estimatedFatG: dish.nutrition?.fatG ?? null,
+    ...(dish.contextNote ? { contextNote: dish.contextNote } : {}),
+  } as DishPick;
+}
+
 export class GeminiMenuAnalysisProvider implements MenuAnalysisProvider {
-  async analyzeMenu(images: string[], user: UserProfile): Promise<MenuScanResult> {
+  async analyzeMenu(
+    images: string[],
+    user: UserProfile,
+    _signal?: AbortSignal,
+    context?: MenuAnalysisContext
+  ): Promise<MenuScanResult> {
     if (images.length === 0) {
       throw new MenuAnalysisFailedError('No images provided');
     }
 
-    const imagePayloads: { base64: string; mimeType: string }[] = [];
-    for (const uri of images) {
-      const base64 = await uriToBase64(uri);
-      if (!base64) throw new MenuAnalysisFailedError(`Failed to read image: ${uri.slice(0, 50)}...`);
-      imagePayloads.push({ base64, mimeType: detectMimeType(uri) });
+    const firstUri = images[0];
+    const base64Image = await uriToBase64(firstUri);
+    if (!base64Image) {
+      throw new MenuAnalysisFailedError(`Failed to read image: ${firstUri.slice(0, 50)}...`);
     }
+    const mimeType = detectMimeType(firstUri);
 
-    const pinWhitelistTop = getPinWhitelist(user.goal);
-    const pinWhitelistCaution = getCautionPinWhitelist(user.goal);
-    const pinWhitelistAvoid = getAvoidPinWhitelist(user.goal);
-
-    // Inject a specific diet-mismatch pin (e.g. "Not Keto") into risk whitelists
-    // when the user has at least one dietary preference selected.
-    const dietMismatchPin = getDietMismatchPin(user.dietaryPreferences ?? []);
-    const effectiveCautionWhitelist = dietMismatchPin
-      ? [...pinWhitelistCaution, dietMismatchPin]
-      : pinWhitelistCaution;
-    const effectiveAvoidWhitelist = dietMismatchPin
-      ? [...pinWhitelistAvoid, dietMismatchPin]
-      : pinWhitelistAvoid;
+    const cacheKey = hashCacheKey([
+      `mime:${mimeType}`,
+      `len:${base64Image.length}`,
+      base64Image,
+      `goal:${user.goal}`,
+      `dislikes:${(user.dislikes ?? []).map((d) => d.trim().toLowerCase()).filter(Boolean).sort().join(',')}`,
+      'menu_v9_raw',
+    ]);
 
     try {
-      const analysis = await analyzeMenuWithGemini({
-        images: imagePayloads,
-        userGoal: user.goal,
-        dietPrefs: user.dietaryPreferences ?? [],
-        allergies: user.allergies ?? [],
-        dislikes: user.dislikes,
-        pinWhitelistTop,
-        pinWhitelistCaution: effectiveCautionWhitelist,
-        pinWhitelistAvoid: effectiveAvoidWhitelist,
-        dietMismatchPin,
-      });
+      let rawAnalysis = await getCached<Awaited<ReturnType<typeof analyzeMenuWithGemini>>>(cacheKey);
+      if (!rawAnalysis) {
+        rawAnalysis = await analyzeMenuWithGemini({
+          imageBase64: base64Image,
+          mimeType,
+          userGoal: user.goal,
+          userDislikes: user.dislikes ?? [],
+        });
+        await setCache(cacheKey, rawAnalysis, TTL_24H);
+      }
 
-      const topPicks: DishPick[] = analysis.topPicks.slice(0, 3);
-      const summaryText = `Buddy ranked dishes for ${user.goal.toLowerCase()} and your preferences.`;
+      const eatenToday = await computeTodayMacrosUseCase(new Date(), { historyRepo });
+      const classified = classifyDishes(rawAnalysis.dishes, user, eatenToday, new Date());
+      const topPicks = classified.topPicks.map(dishRecToDishPick);
+      const caution = classified.caution.map(dishRecToDishPick);
+      const avoid = classified.avoid.map(dishRecToDishPick);
+      const summaryText = `Buddy ranked ${rawAnalysis.dishes.length} dishes for ${user.goal.toLowerCase()} and your preferences.`;
 
       return {
         id: createId('scan'),
+        analysisId: context?.analysisId,
         createdAt: new Date().toISOString(),
         inputImages: images,
         topPicks,
-        caution: analysis.caution,
-        avoid: analysis.avoid,
+        caution,
+        avoid,
         summaryText,
         disclaimerFlag: true,
       };
     } catch (err) {
-      if (err instanceof MenuAnalysisValidationError) throw err;
       if (err instanceof MenuAnalysisInvalidJsonError) throw err;
       const message = err instanceof Error ? err.message : 'Analysis failed';
       throw new MenuAnalysisFailedError(message, err);

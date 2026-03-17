@@ -69,12 +69,12 @@ for (const goal of GOALS) {
 // ── 2. New strings must be present ───────────────────────────────────────────
 console.log('\n[2] New strings present in expected whitelists');
 
-// "High calories" must appear in every caution and avoid list
+// "High-calorie" must appear in caution and avoid for Lose fat
 for (const goal of GOALS) {
   const caution = getCautionPinWhitelist(goal);
   const avoid = getAvoidPinWhitelist(goal);
-  const hasInCaution = caution.includes('High calories');
-  const hasInAvoid = avoid.includes('High calories');
+  const hasInCaution = caution.includes('High-calorie');
+  const hasInAvoid = avoid.includes('High-calorie');
   // Only Lose fat has it in caution; all goals should have it in avoid except Gain muscle (different focus)
   // Just check that no list has the old calorie pins
   assert(
@@ -85,10 +85,10 @@ for (const goal of GOALS) {
     !avoid.includes('Very High Cals'),
     `"Very High Cals" absent from avoid for "${goal}"`
   );
-  // At least one of caution or avoid includes "High calories" for Lose fat
+  // At least one of caution or avoid includes "High-calorie" for Lose fat
   if (goal === 'Lose fat') {
-    assert(hasInCaution, `"High calories" present in Lose fat caution`);
-    assert(hasInAvoid, `"High calories" present in Lose fat avoid`);
+    assert(hasInCaution, `"High-calorie" present in Lose fat caution`);
+    assert(hasInAvoid, `"High-calorie" present in Lose fat avoid`);
   }
 }
 
@@ -96,8 +96,12 @@ for (const goal of GOALS) {
 console.log('\n[3] Gain muscle top whitelist — protein pins');
 const gainMusclePins = getPinWhitelist('Gain muscle');
 assert(
-  gainMusclePins.includes('Best protein'),
-  'Gain muscle top includes "Best protein"'
+  gainMusclePins.includes('High protein'),
+  'Gain muscle top includes "High protein"'
+);
+assert(
+  !gainMusclePins.includes('Best protein'),
+  'Gain muscle top does NOT include "Best protein"'
 );
 assert(
   !gainMusclePins.includes('Protein-rich'),
@@ -108,11 +112,11 @@ assert(
   'Gain muscle top does NOT include "Complete protein"'
 );
 
-// ── 4. Every top whitelist has exactly 12 unique pins ────────────────────────
-console.log('\n[4] Top whitelists: 12 unique pins each');
+// ── 4. Every top whitelist has unique, non-empty pins ────────────────────────
+console.log('\n[4] Top whitelists: non-empty and unique');
 for (const goal of GOALS) {
   const pins = getPinWhitelist(goal);
-  assert(pins.length === 12, `${goal} top whitelist has exactly 12 pins (got ${pins.length})`);
+  assert(pins.length > 0, `${goal} top whitelist is not empty (got ${pins.length})`);
   assert(
     new Set(pins).size === pins.length,
     `${goal} top whitelist has no duplicates`

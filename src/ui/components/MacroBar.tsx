@@ -19,15 +19,16 @@ function MacroColumn({ label, value, showBorder }: { label: string; value: strin
 }
 
 export function MacroBar({ calories, proteinG, carbsG, fatG }: Props): React.JSX.Element | null {
-  const hasMacros = calories != null || proteinG != null || carbsG != null || fatG != null;
-  if (!hasMacros) return null;
+  const hasAllMacros =
+    calories != null && proteinG != null && carbsG != null && fatG != null;
+  if (!hasAllMacros) return null;
 
   return (
     <View style={styles.bar}>
-      <MacroColumn label="CALS" value={calories != null ? `${calories}` : '—'} showBorder={false} />
-      <MacroColumn label="P" value={proteinG != null ? `${proteinG}g` : '—'} showBorder />
-      <MacroColumn label="C" value={carbsG != null ? `${carbsG}g` : '—'} showBorder />
-      <MacroColumn label="F" value={fatG != null ? `${fatG}g` : '—'} showBorder />
+      <MacroColumn label="CALS" value={`${calories}`} showBorder={false} />
+      <MacroColumn label="P" value={`${proteinG}g`} showBorder />
+      <MacroColumn label="C" value={`${carbsG}g`} showBorder />
+      <MacroColumn label="F" value={`${fatG}g`} showBorder />
     </View>
   );
 }

@@ -2,8 +2,8 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { RootStackParamList } from '../app/navigation/types';
-import { ALLERGY_OPTIONS, Allergy, DietaryPreference } from '../domain/models';
-import { userRepo } from '../services/container';
+import { ALLERGY_OPTIONS, Allergy, DietaryPreference, Goal } from '../domain/models';
+import { appPrefsRepo, userRepo } from '../services/container';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Chip } from '../ui/components/Chip';
 import { BottomCTA, getCTATotalHeight } from '../ui/components/BottomCTA';
@@ -16,6 +16,7 @@ import { typography } from '../ui/typography';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DietaryProfile'>;
 const preferences: DietaryPreference[] = ['Vegan or vegetarian', 'Pescatarian', 'Semi-vegetarian', 'Gluten-free', 'Lactose-free', 'Keto', 'Paleo (whole foods)'];
+const goals: Goal[] = ['Lose fat', 'Maintain weight', 'Gain muscle', 'Eat healthier'];
 const POPULAR_DISLIKE_PINS: readonly string[] = [
   'Spicy',
   'Avocado',
@@ -40,11 +41,13 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
   const [selectedAllergies, setSelectedAllergies] = React.useState<Allergy[]>([]);
   const [dislikes, setDislikes] = React.useState<string[]>([]);
   const [dislikeInput, setDislikeInput] = React.useState('');
+  const [selectedGoal, setSelectedGoal] = React.useState<Goal>('Maintain weight');
 
   React.useEffect(() => {
     void (async () => {
       const user = await userRepo.getUser();
       if (user) {
+        if (user.goal) setSelectedGoal(user.goal);
         if (user.dietaryPreferences?.length) setSelectedPreferences(user.dietaryPreferences);
         if (user.allergies?.length) {
           const allowed = user.allergies.filter((a) => ALLERGY_OPTIONS.includes(a));
@@ -84,14 +87,18 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
     return [...POPULAR_DISLIKE_PINS, ...customPins];
   }, [dislikes]);
 
-  const goHome = (): void => navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+  const goHome = async (): Promise<void> => {
+    await appPrefsRepo.markOnboardingCompleted();
+    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+  };
   const onSave = async (): Promise<void> => {
     await userRepo.patchUser({
+      goal: selectedGoal,
       dietaryPreferences: selectedPreferences,
       allergies: selectedAllergies,
       dislikes,
     });
-    goHome();
+    await goHome();
   };
 
   return (
@@ -102,7 +109,7 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
           <View style={styles.dot} /><View style={styles.dot} /><View style={styles.dotActive} /><View style={styles.dot} />
         </View>
         <View style={[styles.headerSpacer, styles.headerSpacerRight]}>
-          <Pressable onPress={goHome} hitSlop={8} style={styles.skipWrap}>
+          <Pressable onPress={() => { void goHome(); }} hitSlop={8} style={styles.skipWrap}>
             <Text style={styles.skipText} maxFontSizeMultiplier={1.2}>Skip</Text>
           </Pressable>
         </View>
@@ -115,6 +122,17 @@ export function DietaryProfileScreen({ navigation }: Props): React.JSX.Element {
       >
         <Text style={styles.title} maxFontSizeMultiplier={1.2}>Dietary profile</Text>
         <Text style={styles.subtitle} maxFontSizeMultiplier={1.2}>Optional. You can change this later.</Text>
+        <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.2}>Main goal</Text>
+        <View style={styles.chipsWrap}>
+          {goals.map((goal) => (
+            <Chip
+              key={goal}
+              label={goal}
+              selected={selectedGoal === goal}
+              onPress={() => setSelectedGoal(goal)}
+            />
+          ))}
+        </View>
         <Text style={styles.sectionTitle} maxFontSizeMultiplier={1.2}>Dislikes</Text>
         <View style={styles.dislikeRow}>
           <TextInput

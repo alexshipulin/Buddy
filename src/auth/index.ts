@@ -1,5 +1,12 @@
 import { appPrefsRepo, userRepo } from '../services/container';
-import { AuthApiError, AuthSession, exchangeOAuthToken, refresh } from './api/authApi';
+import { APPLE_ONLY_AUTH } from '../config/flags';
+import {
+  AuthApiError,
+  AuthSession,
+  exchangeOAuthToken,
+  refresh,
+  signOutProviderSession,
+} from './api/authApi';
 import { AppleSignInError, signInWithApple } from './providers/apple';
 import { GoogleSignInError, signInWithGoogle } from './providers/google';
 import {
@@ -89,17 +96,27 @@ export function getUserFacingAuthErrorMessage(error: unknown): string {
   const authError = toAuthError(error);
   switch (authError.code) {
     case 'provider_unavailable':
+      if (/expo-crypto|crypto support|Crypto module/i.test(authError.message)) {
+        return 'Apple Sign In requires crypto support in this build. Install expo-crypto and rebuild.';
+      }
       return 'Sign in is unavailable on this device.';
     case 'config_error':
+      if (
+        /EXPO_PUBLIC_API_BASE_URL|Firebase Auth|EXPO_PUBLIC_FIREBASE_/i.test(
+          authError.message
+        )
+      ) {
+        return 'Auth is not configured. Set EXPO_PUBLIC_API_BASE_URL or Firebase env vars (EXPO_PUBLIC_FIREBASE_API_KEY, EXPO_PUBLIC_FIREBASE_APP_ID, EXPO_PUBLIC_FIREBASE_PROJECT_ID) in .env/EAS and rebuild.';
+      }
       return 'Sign in is not configured yet. Please try again later.';
     case 'network_error':
       return 'No internet connection. Please try again.';
     case 'backend_error':
-      return 'Could not complete sign in. Please try again.';
+      return authError.message || 'Could not complete sign in. Please try again.';
     case 'session_store_error':
       return 'Could not securely save your session. Please try again.';
     case 'invalid_response':
-      return 'Sign in response was invalid. Please try again.';
+      return authError.message || 'Sign in response was invalid. Please try again.';
     case 'unknown':
       return 'Unexpected sign-in error. Please try again.';
     case 'user_cancelled':
@@ -126,6 +143,13 @@ async function persistAndMarkSignedIn(session: AuthSession): Promise<void> {
 export async function signInWithProvider(
   provider: AuthProvider
 ): Promise<AuthSession> {
+  if (provider === 'google' && APPLE_ONLY_AUTH) {
+    throw new AuthError(
+      'config_error',
+      'Google sign-in is disabled in this build.'
+    );
+  }
+
   try {
     const session =
       provider === 'apple'
@@ -176,6 +200,7 @@ export async function refreshSession(): Promise<AuthSession | null> {
 
 export async function signOut(): Promise<void> {
   try {
+    await signOutProviderSession();
     await clearSession();
     await userRepo.saveAuthState({ signedIn: false });
   } catch (error) {

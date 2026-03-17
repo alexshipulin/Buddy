@@ -1,14 +1,21 @@
 import { getJson, setJson } from '../data/storage/storage';
 import { createId } from '../utils/id';
+import { fetchRemoteAIDebugLogsByAnalysisId, pushRemoteAIDebugEntry } from './aiDebugRemote';
+import { pushLocalAIDebugEntry } from './aiDebugLocalSink';
 
 const AI_LOGS_KEY = 'buddy_ai_debug_logs_v1';
-const MAX_LOG_ENTRIES = 500;
+const AI_LOGS_BY_ANALYSIS_KEY = 'buddy_ai_debug_logs_by_analysis_v1';
+const MAX_LOG_ENTRIES = 1500;
+// 0 = unlimited. Keep per-analysis logs unbounded by default so scan reports stay complete.
+const MAX_ANALYSIS_GROUPS = 0;
+const MAX_ANALYSIS_LOG_ENTRIES = 0;
 
 export type AIDebugLevel = 'info' | 'warn' | 'error';
 
 export type AIDebugEntry = {
   id: string;
   createdAt: string;
+  analysisId?: number;
   level: AIDebugLevel;
   task: string;
   stage: string;
@@ -20,7 +27,18 @@ export type AIDebugEntry = {
   details?: Record<string, unknown>;
 };
 
+type AIDebugLogsByAnalysis = {
+  order: number[];
+  byAnalysisId: Record<string, AIDebugEntry[]>;
+};
+
+const initialByAnalysis: AIDebugLogsByAnalysis = {
+  order: [],
+  byAnalysisId: {},
+};
+
 let writeQueue: Promise<void> = Promise.resolve();
+const sessionAnalysisMap = new Map<string, number>();
 
 function enqueueWrite(op: () => Promise<void>): void {
   writeQueue = writeQueue
@@ -31,10 +49,22 @@ function enqueueWrite(op: () => Promise<void>): void {
 }
 
 export function logAIDebug(input: Omit<AIDebugEntry, 'id' | 'createdAt'>): void {
+  const inferredAnalysisId =
+    typeof input.analysisId === 'number' && Number.isFinite(input.analysisId)
+      ? Math.max(0, Math.floor(input.analysisId))
+      : input.sessionId
+        ? sessionAnalysisMap.get(input.sessionId)
+        : undefined;
+
+  if (input.sessionId && inferredAnalysisId != null) {
+    sessionAnalysisMap.set(input.sessionId, inferredAnalysisId);
+  }
+
   const entry: AIDebugEntry = {
     id: createId('ai_log'),
     createdAt: new Date().toISOString(),
     ...input,
+    analysisId: inferredAnalysisId,
   };
 
   if (__DEV__) {
@@ -42,6 +72,7 @@ export function logAIDebug(input: Omit<AIDebugEntry, 'id' | 'createdAt'>): void 
     const meta: Record<string, unknown> = {
       stage: entry.stage,
       sessionId: entry.sessionId,
+      analysisId: entry.analysisId,
       model: entry.model,
       status: entry.status,
       durationMs: entry.durationMs,
@@ -50,27 +81,106 @@ export function logAIDebug(input: Omit<AIDebugEntry, 'id' | 'createdAt'>): void 
     console.log(prefix, entry.message, meta);
   }
 
+  pushLocalAIDebugEntry(entry);
+
   enqueueWrite(async () => {
     const current = await getJson<AIDebugEntry[]>(AI_LOGS_KEY, []);
     const next = [...current, entry];
     const trimmed = next.length > MAX_LOG_ENTRIES ? next.slice(next.length - MAX_LOG_ENTRIES) : next;
     await setJson(AI_LOGS_KEY, trimmed);
+    await pushRemoteAIDebugEntry(entry);
+
+    if (typeof entry.analysisId === 'number' && Number.isFinite(entry.analysisId)) {
+      const store = await getJson<AIDebugLogsByAnalysis>(AI_LOGS_BY_ANALYSIS_KEY, initialByAnalysis);
+      const id = Math.max(0, Math.floor(entry.analysisId));
+      const key = String(id);
+      const existing = store.byAnalysisId[key] ?? [];
+      const updatedEntries = [...existing, entry];
+      store.byAnalysisId[key] =
+        MAX_ANALYSIS_LOG_ENTRIES > 0 && updatedEntries.length > MAX_ANALYSIS_LOG_ENTRIES
+          ? updatedEntries.slice(updatedEntries.length - MAX_ANALYSIS_LOG_ENTRIES)
+          : updatedEntries;
+
+      if (!store.order.includes(id)) {
+        store.order = [...store.order, id];
+      }
+      if (MAX_ANALYSIS_GROUPS > 0 && store.order.length > MAX_ANALYSIS_GROUPS) {
+        const toDrop = store.order.slice(0, store.order.length - MAX_ANALYSIS_GROUPS);
+        store.order = store.order.slice(store.order.length - MAX_ANALYSIS_GROUPS);
+        toDrop.forEach((dropId) => {
+          delete store.byAnalysisId[String(dropId)];
+        });
+      }
+      await setJson(AI_LOGS_BY_ANALYSIS_KEY, store);
+    }
   });
 }
 
-export async function getAIDebugLogs(limit = 200): Promise<AIDebugEntry[]> {
+export async function flushAIDebugLogs(): Promise<void> {
+  await writeQueue;
+}
+
+function sliceLatestReversed(logs: AIDebugEntry[], limit?: number): AIDebugEntry[] {
+  const safeLimit =
+    typeof limit === 'number' && Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0;
+  const picked = safeLimit > 0 ? logs.slice(Math.max(0, logs.length - safeLimit)) : logs;
+  return [...picked].reverse();
+}
+
+function mergeEntriesKeepingLatest(a: AIDebugEntry[], b: AIDebugEntry[]): AIDebugEntry[] {
+  const byId = new Map<string, AIDebugEntry>();
+  for (const entry of [...a, ...b]) {
+    const existing = byId.get(entry.id);
+    if (!existing) {
+      byId.set(entry.id, entry);
+      continue;
+    }
+    const existingTs = Date.parse(existing.createdAt);
+    const nextTs = Date.parse(entry.createdAt);
+    if (!Number.isFinite(existingTs) || (Number.isFinite(nextTs) && nextTs >= existingTs)) {
+      byId.set(entry.id, entry);
+    }
+  }
+  return [...byId.values()];
+}
+
+function sortByCreatedAtAsc(entries: AIDebugEntry[]): AIDebugEntry[] {
+  return [...entries].sort((left, right) => {
+    const a = Date.parse(left.createdAt);
+    const b = Date.parse(right.createdAt);
+    if (Number.isFinite(a) && Number.isFinite(b) && a !== b) return a - b;
+    return left.id.localeCompare(right.id);
+  });
+}
+
+export async function getAIDebugLogs(limit = 400): Promise<AIDebugEntry[]> {
+  await flushAIDebugLogs();
   const logs = await getJson<AIDebugEntry[]>(AI_LOGS_KEY, []);
-  return [...logs].slice(Math.max(0, logs.length - limit)).reverse();
+  return sliceLatestReversed(logs, limit);
+}
+
+export async function getAIDebugLogsByAnalysisId(
+  analysisId: number,
+  limit?: number
+): Promise<AIDebugEntry[]> {
+  await flushAIDebugLogs();
+  const id = Math.max(0, Math.floor(analysisId));
+  if (id <= 0) return [];
+  const store = await getJson<AIDebugLogsByAnalysis>(AI_LOGS_BY_ANALYSIS_KEY, initialByAnalysis);
+  const localEntries = store.byAnalysisId[String(id)] ?? [];
+  const remoteEntries = await fetchRemoteAIDebugLogsByAnalysisId(id, limit);
+  const merged = sortByCreatedAtAsc(mergeEntriesKeepingLatest(localEntries, remoteEntries));
+  return sliceLatestReversed(merged, limit);
 }
 
 export async function clearAIDebugLogs(): Promise<void> {
   await setJson(AI_LOGS_KEY, []);
+  await setJson(AI_LOGS_BY_ANALYSIS_KEY, initialByAnalysis);
 }
 
-export async function buildAIDebugReport(limit = 400): Promise<string> {
-  const logs = await getAIDebugLogs(limit);
+function renderDebugReport(logs: AIDebugEntry[], title: string): string {
   const lines: string[] = [];
-  lines.push(`Buddy AI debug report`);
+  lines.push(title);
   lines.push(`Generated: ${new Date().toISOString()}`);
   lines.push(`Entries: ${logs.length}`);
   lines.push('');
@@ -84,9 +194,15 @@ export async function buildAIDebugReport(limit = 400): Promise<string> {
       log.message,
     ];
     lines.push(parts.join(' | '));
-    if (log.sessionId || log.model || log.status != null || log.durationMs != null) {
+    if (
+      log.analysisId != null ||
+      log.sessionId ||
+      log.model ||
+      log.status != null ||
+      log.durationMs != null
+    ) {
       lines.push(
-        `meta: session=${log.sessionId ?? '-'} model=${log.model ?? '-'} status=${log.status ?? '-'} durationMs=${log.durationMs ?? '-'}`
+        `meta: analysisId=${log.analysisId ?? '-'} session=${log.sessionId ?? '-'} model=${log.model ?? '-'} status=${log.status ?? '-'} durationMs=${log.durationMs ?? '-'}`
       );
     }
     if (log.details && Object.keys(log.details).length) {
@@ -95,4 +211,18 @@ export async function buildAIDebugReport(limit = 400): Promise<string> {
     lines.push('');
   }
   return lines.join('\n');
+}
+
+export async function buildAIDebugReport(limit = 1200): Promise<string> {
+  const logs = await getAIDebugLogs(limit);
+  return renderDebugReport(logs, 'Buddy AI debug report');
+}
+
+export async function buildAIDebugReportByAnalysisId(
+  analysisId: number,
+  limit?: number
+): Promise<string> {
+  const id = Math.max(0, Math.floor(analysisId));
+  const logs = await getAIDebugLogsByAnalysisId(id, limit);
+  return renderDebugReport(logs, `Buddy AI debug report | analysisId=${id}`);
 }

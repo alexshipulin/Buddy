@@ -29,10 +29,10 @@ import {
   MenuAnalysisInvalidJsonError,
   MenuAnalysisValidationError,
 } from '../services/analyzeMenuUseCase';
-import { appPrefsRepo, historyRepo, menuAnalysisProvider, trialRepo, userRepo } from '../services/container';
+import { appPrefsRepo, dailyNutritionRepo, historyRepo, menuAnalysisProvider, trialRepo, userRepo } from '../services/container';
 import { useAppAlert } from '../ui/components/AppAlertProvider';
 import { abortInflight } from '../ai/inflight';
-import { buildAIDebugReport } from '../ai/aiDebugLog';
+import { buildAIDebugReport, buildAIDebugReportByAnalysisId } from '../ai/aiDebugLog';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ScanMenu'>;
 
@@ -238,6 +238,7 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
   const [loading, setLoading] = React.useState(false);
   const [flashOn, setFlashOn] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+  const [errorAnalysisId, setErrorAnalysisId] = React.useState<number | null>(null);
   const [rawAiOutput, setRawAiOutput] = React.useState<string | null>(null);
   const [rawAiModel, setRawAiModel] = React.useState<string | null>(null);
   const [showRawOutput, setShowRawOutput] = React.useState(false);
@@ -381,6 +382,7 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
     await maybeSaveToGallery(photos);
     navigation.navigate('MenuResults', {
       resultId: output.resultId,
+      analysisId: output.analysisId,
       paywallAfterOpen: output.shouldShowPaywallAfterResults,
       trialDaysLeft: output.trialDaysLeft,
     });
@@ -388,6 +390,7 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
 
   const dismissError = (): void => {
     setErrorMessage(null);
+    setErrorAnalysisId(null);
     setRawAiOutput(null);
     setRawAiModel(null);
     setShowRawOutput(false);
@@ -414,6 +417,7 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
     setLoading(true);
     try {
       const output = await analyzeMenuUseCase(photos, {
+        dailyNutritionRepo,
         historyRepo,
         menuProvider: menuAnalysisProvider,
         trialRepo,
@@ -424,6 +428,11 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
     } catch (e) {
       if (activeRunIdRef.current !== runId) return;
       if (e instanceof Error && e.name === 'AbortError') return;
+      const capturedAnalysisId =
+        typeof (e as { analysisId?: unknown })?.analysisId === 'number'
+          ? Math.floor((e as { analysisId: number }).analysisId)
+          : null;
+      setErrorAnalysisId(capturedAnalysisId && capturedAnalysisId > 0 ? capturedAnalysisId : null);
       if (e instanceof DailyScanLimitReachedError) {
         setErrorMessage('Daily limit reached. You can scan one menu per day on Free plan.');
       } else if (e instanceof MenuAnalysisInvalidJsonError) {
@@ -661,6 +670,9 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
           <Card style={styles.errorCard}>
             <Text style={styles.errorTitle}>Something went wrong</Text>
             <Text style={styles.errorText}>{errorMessage}</Text>
+            {errorAnalysisId ? (
+              <Text style={styles.analysisIdText}>Scan ID #{errorAnalysisId}</Text>
+            ) : null}
             <Pressable
               style={styles.copyErrorBtn}
               onPress={() => {
@@ -675,11 +687,28 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
             >
               <Text style={styles.copyErrorBtnText}>Share</Text>
             </Pressable>
+            {errorAnalysisId ? (
+              <Pressable
+                style={styles.copyErrorBtn}
+                onPress={() => {
+                  void (async () => {
+                    const report = await buildAIDebugReportByAnalysisId(errorAnalysisId);
+                    await shareText(
+                      report,
+                      `AI debug report #${errorAnalysisId}`,
+                      `AI debug report for scan #${errorAnalysisId} is ready to share.`
+                    );
+                  })();
+                }}
+              >
+                <Text style={styles.copyErrorBtnText}>Share this scan logs</Text>
+              </Pressable>
+            ) : null}
             <Pressable
               style={styles.copyErrorBtn}
               onPress={() => {
                 void (async () => {
-                  const report = await buildAIDebugReport(300);
+                  const report = await buildAIDebugReport(1200);
                   await shareText(
                     report,
                     'AI debug report',
@@ -1092,6 +1121,11 @@ const styles = StyleSheet.create({
     color: appTheme.colors.textSecondary,
     fontSize: appTheme.typography.small.fontSize,
     textAlign: 'center',
+  },
+  analysisIdText: {
+    color: appTheme.colors.textSecondary,
+    fontSize: appTheme.typography.footnote.fontSize,
+    fontWeight: '600',
   },
   copyErrorBtn: {
     alignSelf: 'center',

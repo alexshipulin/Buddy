@@ -65,8 +65,8 @@ export async function seedMockDataIfNeeded(deps: SeedDeps): Promise<void> {
       topPicks: [
         { name: 'Grilled fish with vegetables', shortReason: 'Balanced macros and high protein.', pins: ['High protein', 'Balanced', 'Lean protein'], confidencePercent: 85, dietBadges: [], allergenNote: null, noLine: null },
       ],
-      caution: [{ name: 'Pasta carbonara', shortReason: 'Energy dense, portion matters.', pins: [], riskPins: ['High calories', 'Refined Carbs'], quickFix: 'Try: half portion', confidencePercent: 65, dietBadges: [], allergenNote: null, noLine: null }],
-      avoid: [{ name: 'Fried combo set', shortReason: 'High calories and low satiety.', pins: [], riskPins: ['Deep-fried', 'High calories'], confidencePercent: 90, dietBadges: [], allergenNote: null, noLine: null }],
+      caution: [{ name: 'Pasta carbonara', shortReason: 'Energy dense, portion matters.', pins: [], riskPins: ['High-calorie', 'Refined Carbs'], quickFix: 'Try: half portion', confidencePercent: 65, dietBadges: [], allergenNote: null, noLine: null }],
+      avoid: [{ name: 'Fried combo set', shortReason: 'High calories and low satiety.', pins: [], riskPins: ['Fried', 'High-calorie'], confidencePercent: 90, dietBadges: [], allergenNote: null, noLine: null }],
       summaryText: 'Sample result for UI preview.',
       disclaimerFlag: true,
     };

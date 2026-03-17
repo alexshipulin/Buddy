@@ -1,7 +1,7 @@
 import { logAIDebug } from './aiDebugLog';
 import { createId } from '../utils/id';
 
-export type TaskType = 'menu_scan' | 'meal_photo' | 'chat' | 'nutrition_targets' | 'legacy_menu';
+export type TaskType = 'menu_scan' | 'meal_photo' | 'meal_text' | 'chat' | 'nutrition_targets' | 'legacy_menu';
 
 export type ErrorCategory = 'RATE_LIMIT' | 'SERVER' | 'CLIENT' | 'NETWORK' | 'ABORT' | 'UNKNOWN';
 
@@ -14,6 +14,7 @@ type CallResult = { rawText: string; httpStatus: number; rawJson: GeminiResponse
 
 export type GeminiCallError = Error & {
   status?: number;
+  model?: string;
   category: ErrorCategory;
   isStructuredUnsupported: boolean;
 };
@@ -23,6 +24,12 @@ const DEFAULT_GEMINI_TIMEOUT_MS = (() => {
   const parsed = Number(process.env.EXPO_PUBLIC_GEMINI_TIMEOUT_MS ?? 45000);
   if (!Number.isFinite(parsed)) return 45000;
   return Math.max(5000, Math.round(parsed));
+})();
+
+const HEAVY_MODEL_TIMEOUT_MS = (() => {
+  const parsed = Number(process.env.EXPO_PUBLIC_GEMINI_HEAVY_TIMEOUT_MS ?? 65000);
+  if (!Number.isFinite(parsed)) return Math.max(DEFAULT_GEMINI_TIMEOUT_MS, 65000);
+  return Math.max(DEFAULT_GEMINI_TIMEOUT_MS, Math.round(parsed));
 })();
 
 const STRUCTURED_MARKERS = [
@@ -38,20 +45,65 @@ const STRUCTURED_MARKERS = [
 
 // ── Model chains per task ─────────────────────────────────────────────────────
 
+function parseModelListEnv(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function dedupeModels(models: string[]): string[] {
+  return models.filter((model, index) => models.indexOf(model) === index);
+}
+
+function modelCostRank(model: string): number {
+  const lower = model.toLowerCase();
+  if (lower.includes('pro')) return 90;
+  if (lower.includes('2.5-flash') && !lower.includes('lite')) return 70;
+  if (lower.includes('2.0-flash') && !lower.includes('lite')) return 60;
+  if (lower.includes('1.5-flash') && !lower.includes('8b')) return 50;
+  if (lower.includes('2.5-flash-lite')) return 40;
+  if (lower.includes('2.0-flash-lite')) return 30;
+  if (lower.includes('1.5-flash-8b')) return 20;
+  if (lower.includes('lite')) return 35;
+  if (lower.includes('8b')) return 15;
+  return 55;
+}
+
+function findNextRateLimitCandidate(models: string[], currentIndex: number): number {
+  const current = models[currentIndex];
+  const currentRank = modelCostRank(current);
+  for (let i = currentIndex + 1; i < models.length; i++) {
+    const candidate = models[i];
+    if (modelCostRank(candidate) <= currentRank) return i;
+  }
+  return -1;
+}
+
 export function buildModelChain(taskType: TaskType): string[] {
   let chain: string[];
   switch (taskType) {
-    case 'menu_scan':
-      chain = ['gemini-2.5-flash-lite', process.env.EXPO_PUBLIC_GEMINI_MODEL ?? 'gemini-2.5-flash', 'gemini-2.5-flash'];
+    case 'menu_scan': {
+      const explicitMenuScanModels = parseModelListEnv(process.env.EXPO_PUBLIC_GEMINI_MENU_SCAN_MODELS);
+      const defaultMenuScanModels = [process.env.EXPO_PUBLIC_GEMINI_MODEL ?? 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+      const rateLimitDowngradeModels = parseModelListEnv(process.env.EXPO_PUBLIC_GEMINI_RATE_LIMIT_DOWNGRADE_MODELS);
+      chain = [...(explicitMenuScanModels.length > 0 ? explicitMenuScanModels : defaultMenuScanModels), ...rateLimitDowngradeModels];
       break;
+    }
     case 'meal_photo':
+    case 'meal_text':
     case 'chat':
     case 'nutrition_targets':
     case 'legacy_menu':
       chain = ['gemini-2.5-flash-lite', 'gemini-2.5-flash'];
       break;
   }
-  return chain.filter((m, i) => chain.indexOf(m) === i);
+  return dedupeModels(chain.filter(Boolean));
+}
+
+function timeoutForModel(model: string): number {
+  return /flash-lite/i.test(model) ? DEFAULT_GEMINI_TIMEOUT_MS : HEAVY_MODEL_TIMEOUT_MS;
 }
 
 // ── Low-level helpers ─────────────────────────────────────────────────────────
@@ -151,14 +203,14 @@ export async function callGenerateContent(params: {
     if (timedOut() && !params.signal?.aborted) {
       const timeoutError = Object.assign(
         new Error(`Gemini timeout after ${timeoutMs}ms (${params.model})`),
-        { status: 408, category: 'NETWORK' as ErrorCategory, isStructuredUnsupported: false },
+        { status: 408, model: params.model, category: 'NETWORK' as ErrorCategory, isStructuredUnsupported: false },
       ) as GeminiCallError;
       throw timeoutError;
     }
     const category = classifyError(fetchErr);
     const err = Object.assign(
       new Error(`Gemini request failed (${params.model}): ${(fetchErr as Error)?.message ?? 'Unknown error'}`),
-      { category, isStructuredUnsupported: false },
+      { model: params.model, category, isStructuredUnsupported: false },
     ) as GeminiCallError;
     throw err;
   } finally {
@@ -171,7 +223,7 @@ export async function callGenerateContent(params: {
     const structured = isStructuredUnsupportedError(res.status, errText);
     const err = Object.assign(
       new Error(`Gemini ${res.status} (${params.model}): ${errText.slice(0, 300)}`),
-      { status: res.status, category, isStructuredUnsupported: structured },
+      { status: res.status, model: params.model, category, isStructuredUnsupported: structured },
     ) as GeminiCallError;
     throw err;
   }
@@ -191,12 +243,16 @@ export type RunOpts = {
   signal?: AbortSignal;
   /** Correlation id to stitch multi-step logs from one request. */
   debugSessionId?: string;
+  /** Optional analysis id used to group all logs for one AI request across screens. */
+  debugAnalysisId?: number;
   /** Optional light context for diagnostics (do not include secrets). */
   debugMeta?: Record<string, unknown>;
   /** When true, on structured-unsupported the runner will retry without schema. */
   supportsPlainFallback?: boolean;
   /** Callback to produce body without responseSchema/responseMimeType. Prompt should include "Return only valid JSON." */
   buildPlainBody?: () => object;
+  /** Optional callback to produce a smaller/faster body for timeout recovery. */
+  buildLightweightBody?: () => object;
 };
 
 function sleep(ms: number): Promise<void> {
@@ -215,15 +271,18 @@ export async function runWithFallback(opts: RunOpts): Promise<{ rawText: string;
     (m, i, arr) => Boolean(m) && arr.indexOf(m) === i
   );
   const sessionId = opts.debugSessionId ?? createId(opts.taskType);
+  const analysisId = opts.debugAnalysisId;
   const runStartedAt = Date.now();
   let lastErr: unknown;
   let allRateLimited = true;
+  let lightweightRetryUsed = false;
   logAIDebug({
     level: 'info',
     task: opts.taskType,
     stage: 'run.start',
     message: 'AI request started',
     sessionId,
+    analysisId,
     details: { models, supportsPlainFallback: Boolean(opts.supportsPlainFallback), ...opts.debugMeta },
   });
 
@@ -233,16 +292,24 @@ export async function runWithFallback(opts: RunOpts): Promise<{ rawText: string;
 
     try {
       const attemptStartedAt = Date.now();
+      const timeoutMs = timeoutForModel(model);
       logAIDebug({
         level: 'info',
         task: opts.taskType,
         stage: 'attempt.start',
         message: `Calling model ${model}`,
         sessionId,
+        analysisId,
         model,
-        details: { attempt: i + 1, totalModels: models.length },
+        details: { attempt: i + 1, totalModels: models.length, timeoutMs },
       });
-      const result = await callGenerateContent({ model, apiKey: opts.apiKey, body: opts.body, signal: opts.signal });
+      const result = await callGenerateContent({
+        model,
+        apiKey: opts.apiKey,
+        body: opts.body,
+        signal: opts.signal,
+        timeoutMs,
+      });
       const attemptDurationMs = Date.now() - attemptStartedAt;
       logAIDebug({
         level: 'info',
@@ -250,6 +317,7 @@ export async function runWithFallback(opts: RunOpts): Promise<{ rawText: string;
         stage: 'attempt.success',
         message: `Model ${model} succeeded`,
         sessionId,
+        analysisId,
         model,
         status: result.httpStatus,
         durationMs: attemptDurationMs,
@@ -261,6 +329,7 @@ export async function runWithFallback(opts: RunOpts): Promise<{ rawText: string;
         stage: 'run.success',
         message: 'AI request finished',
         sessionId,
+        analysisId,
         model,
         durationMs: Date.now() - runStartedAt,
       });
@@ -275,6 +344,7 @@ export async function runWithFallback(opts: RunOpts): Promise<{ rawText: string;
         stage: 'attempt.error',
         message: `Model ${model} failed (${category})`,
         sessionId,
+        analysisId,
         model,
         status: callErr.status,
         details: {
@@ -295,6 +365,7 @@ export async function runWithFallback(opts: RunOpts): Promise<{ rawText: string;
           stage: 'run.abort',
           message: 'AI request aborted',
           sessionId,
+          analysisId,
           model,
           durationMs: Date.now() - runStartedAt,
         });
@@ -312,17 +383,25 @@ export async function runWithFallback(opts: RunOpts): Promise<{ rawText: string;
           stage: 'plain_fallback.start',
           message: `Trying plain fallback on ${model}`,
           sessionId,
+          analysisId,
           model,
         });
         try {
           const plainBody = opts.buildPlainBody();
-          const result = await callGenerateContent({ model, apiKey: opts.apiKey, body: plainBody, signal: opts.signal });
+          const result = await callGenerateContent({
+            model,
+            apiKey: opts.apiKey,
+            body: plainBody,
+            signal: opts.signal,
+            timeoutMs: timeoutForModel(model),
+          });
           logAIDebug({
             level: 'info',
             task: opts.taskType,
             stage: 'plain_fallback.success',
             message: `Plain fallback succeeded on ${model}`,
             sessionId,
+            analysisId,
             model,
             durationMs: Date.now() - plainStartedAt,
             status: result.httpStatus,
@@ -334,6 +413,7 @@ export async function runWithFallback(opts: RunOpts): Promise<{ rawText: string;
             stage: 'run.success',
             message: 'AI request finished via plain fallback',
             sessionId,
+            analysisId,
             model,
             durationMs: Date.now() - runStartedAt,
           });
@@ -345,6 +425,7 @@ export async function runWithFallback(opts: RunOpts): Promise<{ rawText: string;
             stage: 'plain_fallback.error',
             message: `Plain fallback failed on ${model}`,
             sessionId,
+            analysisId,
             model,
             durationMs: Date.now() - plainStartedAt,
             details: {
@@ -359,6 +440,7 @@ export async function runWithFallback(opts: RunOpts): Promise<{ rawText: string;
               stage: 'run.abort',
               message: 'AI request aborted during plain fallback',
               sessionId,
+              analysisId,
               model,
               durationMs: Date.now() - runStartedAt,
             });
@@ -371,16 +453,134 @@ export async function runWithFallback(opts: RunOpts): Promise<{ rawText: string;
 
       // 429 → skip to next model immediately
       if (category === 'RATE_LIMIT') {
-        if (!isLast) continue;
+        const nextRateLimitIndex = findNextRateLimitCandidate(models, i);
+        const nextModel = nextRateLimitIndex >= 0 ? models[nextRateLimitIndex] : null;
+        const skippedHeavierModels =
+          nextRateLimitIndex > i + 1 ? models.slice(i + 1, nextRateLimitIndex) : [];
+        const waitMs = 300 + Math.round(Math.random() * 500);
+        logAIDebug({
+          level: 'warn',
+          task: opts.taskType,
+          stage: 'rate_limit.downgrade',
+          message: `Rate limit on ${model}, trying lighter fallback`,
+          sessionId,
+          analysisId,
+          model,
+          details: { waitMs, nextModel, skippedHeavierModels },
+        });
+        await sleep(waitMs);
+        if (nextRateLimitIndex >= 0) {
+          i = nextRateLimitIndex - 1;
+          continue;
+        }
+        if (!isLast) {
+          logAIDebug({
+            level: 'warn',
+            task: opts.taskType,
+            stage: 'rate_limit.no_lower_model',
+            message: `Rate limit on ${model}, no cheaper model left`,
+            sessionId,
+            analysisId,
+            model,
+            details: {
+              remainingModels: models.slice(i + 1),
+            },
+          });
+        }
         logAIDebug({
           level: 'error',
           task: opts.taskType,
           stage: 'run.rate_limited',
           message: 'All models returned rate limit',
           sessionId,
+          analysisId,
           durationMs: Date.now() - runStartedAt,
         });
         throw allRateLimited ? new AllModelsRateLimitedError() : e;
+      }
+
+      const isTimeout =
+        callErr.status === 408 || /timeout/i.test((e as Error)?.message ?? '');
+      if (isTimeout && !lightweightRetryUsed && opts.buildLightweightBody) {
+        lightweightRetryUsed = true;
+        const lightweightModel =
+          models.find((candidate) => /flash-lite/i.test(candidate) && candidate !== model) ?? model;
+        const lightweightTimeoutMs = timeoutForModel(lightweightModel);
+        const lightweightStartedAt = Date.now();
+        logAIDebug({
+          level: 'warn',
+          task: opts.taskType,
+          stage: 'lightweight_retry.start',
+          message: `Timeout on ${model}, trying lightweight retry`,
+          sessionId,
+          analysisId,
+          model: lightweightModel,
+          details: { sourceModel: model, timeoutMs: lightweightTimeoutMs },
+        });
+        try {
+          const lightweightBody = opts.buildLightweightBody();
+          const lightweightResult = await callGenerateContent({
+            model: lightweightModel,
+            apiKey: opts.apiKey,
+            body: lightweightBody,
+            signal: opts.signal,
+            timeoutMs: lightweightTimeoutMs,
+          });
+          logAIDebug({
+            level: 'info',
+            task: opts.taskType,
+            stage: 'lightweight_retry.success',
+            message: `Lightweight retry succeeded on ${lightweightModel}`,
+            sessionId,
+            analysisId,
+            model: lightweightModel,
+            status: lightweightResult.httpStatus,
+            durationMs: Date.now() - lightweightStartedAt,
+            details: { rawLen: lightweightResult.rawText.length, sourceModel: model },
+          });
+          logAIDebug({
+            level: 'info',
+            task: opts.taskType,
+            stage: 'run.success',
+            message: 'AI request finished via lightweight retry',
+            sessionId,
+            analysisId,
+            model: lightweightModel,
+            durationMs: Date.now() - runStartedAt,
+          });
+          return { rawText: lightweightResult.rawText, model: lightweightModel };
+        } catch (lightErr) {
+          logAIDebug({
+            level: 'warn',
+            task: opts.taskType,
+            stage: 'lightweight_retry.error',
+            message: `Lightweight retry failed on ${lightweightModel}`,
+            sessionId,
+            analysisId,
+            model: lightweightModel,
+            durationMs: Date.now() - lightweightStartedAt,
+            details: {
+              sourceModel: model,
+              errName: (lightErr as Error)?.name,
+              errMsg: (lightErr as Error)?.message?.slice(0, 240),
+            },
+          });
+          if (classifyError(lightErr) === 'ABORT') {
+            logAIDebug({
+              level: 'warn',
+              task: opts.taskType,
+              stage: 'run.abort',
+              message: 'AI request aborted during lightweight retry',
+              sessionId,
+              analysisId,
+              model: lightweightModel,
+              durationMs: Date.now() - runStartedAt,
+            });
+            throw lightErr;
+          }
+          if (!isLast) continue;
+          throw e;
+        }
       }
 
       // 5xx → one retry with backoff, then next model
@@ -392,19 +592,27 @@ export async function runWithFallback(opts: RunOpts): Promise<{ rawText: string;
           stage: 'retry.wait',
           message: `Server error on ${model}, waiting before retry`,
           sessionId,
+          analysisId,
           model,
           details: { waitMs: 300 + jitter },
         });
         await sleep(300 + jitter);
         try {
           const retryStartedAt = Date.now();
-          const result = await callGenerateContent({ model, apiKey: opts.apiKey, body: opts.body, signal: opts.signal });
+          const result = await callGenerateContent({
+            model,
+            apiKey: opts.apiKey,
+            body: opts.body,
+            signal: opts.signal,
+            timeoutMs: timeoutForModel(model),
+          });
           logAIDebug({
             level: 'info',
             task: opts.taskType,
             stage: 'retry.success',
             message: `Retry succeeded on ${model}`,
             sessionId,
+            analysisId,
             model,
             status: result.httpStatus,
             durationMs: Date.now() - retryStartedAt,
@@ -416,6 +624,7 @@ export async function runWithFallback(opts: RunOpts): Promise<{ rawText: string;
             stage: 'run.success',
             message: 'AI request finished after retry',
             sessionId,
+            analysisId,
             model,
             durationMs: Date.now() - runStartedAt,
           });
@@ -427,6 +636,7 @@ export async function runWithFallback(opts: RunOpts): Promise<{ rawText: string;
             stage: 'retry.error',
             message: `Retry failed on ${model}`,
             sessionId,
+            analysisId,
             model,
             details: {
               errName: (retryErr as Error)?.name,
@@ -440,6 +650,7 @@ export async function runWithFallback(opts: RunOpts): Promise<{ rawText: string;
               stage: 'run.abort',
               message: 'AI request aborted during retry',
               sessionId,
+              analysisId,
               model,
               durationMs: Date.now() - runStartedAt,
             });
@@ -458,6 +669,7 @@ export async function runWithFallback(opts: RunOpts): Promise<{ rawText: string;
           stage: 'run.client_error',
           message: 'Client-side API error; stopping fallback',
           sessionId,
+          analysisId,
           model,
           status: callErr.status,
           durationMs: Date.now() - runStartedAt,
@@ -473,6 +685,7 @@ export async function runWithFallback(opts: RunOpts): Promise<{ rawText: string;
         stage: 'run.failed',
         message: 'AI request failed after trying all models',
         sessionId,
+        analysisId,
         durationMs: Date.now() - runStartedAt,
         details: { category },
       });
@@ -486,6 +699,7 @@ export async function runWithFallback(opts: RunOpts): Promise<{ rawText: string;
     stage: 'run.failed',
     message: 'All models exhausted',
     sessionId,
+    analysisId,
     durationMs: Date.now() - runStartedAt,
     details: {
       errName: (lastErr as Error)?.name,

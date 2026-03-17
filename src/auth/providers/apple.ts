@@ -22,6 +22,10 @@ type ExpoCryptoModule = {
   getRandomBytesAsync: (byteCount: number) => Promise<Uint8Array>;
 };
 
+type GlobalCryptoLike = {
+  getRandomValues?: (array: Uint8Array) => Uint8Array;
+};
+
 export type AppleSignInName = {
   givenName?: string;
   familyName?: string;
@@ -70,6 +74,15 @@ function getExpoCryptoModule(): ExpoCryptoModule | null {
   }
 }
 
+function getGlobalCryptoBytes(byteCount: number): Uint8Array | null {
+  if (typeof globalThis === 'undefined') return null;
+  const maybeCrypto = (globalThis as { crypto?: GlobalCryptoLike }).crypto;
+  if (!maybeCrypto?.getRandomValues) return null;
+  const bytes = new Uint8Array(byteCount);
+  maybeCrypto.getRandomValues(bytes);
+  return bytes;
+}
+
 function toBase64Url(bytes: Uint8Array): string {
   let base64 = '';
   for (let i = 0; i < bytes.length; i += 3) {
@@ -87,14 +100,18 @@ function toBase64Url(bytes: Uint8Array): string {
 
 async function createNonce(): Promise<string> {
   const crypto = getExpoCryptoModule();
-  if (!crypto) {
-    throw new AppleSignInError(
-      'not_available',
-      'Crypto module is unavailable. Please reinstall app dependencies.'
-    );
+  if (crypto) {
+    const bytes = await crypto.getRandomBytesAsync(32);
+    return toBase64Url(bytes);
   }
-  const bytes = await crypto.getRandomBytesAsync(32);
-  return toBase64Url(bytes);
+
+  const globalBytes = getGlobalCryptoBytes(32);
+  if (globalBytes) return toBase64Url(globalBytes);
+
+  throw new AppleSignInError(
+    'not_available',
+    'Crypto module is unavailable. Install expo-crypto or use a runtime with global crypto support.'
+  );
 }
 
 export async function signInWithApple(): Promise<AppleSignInSuccess> {

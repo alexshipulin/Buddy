@@ -1,14 +1,17 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import * as Clipboard from 'expo-clipboard';
 import React from 'react';
 import { ActionSheetIOS, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../app/navigation/types';
-import { DishPick, MenuScanResult } from '../domain/models';
+import { DishPick, MacroTotals, MenuScanResult, NutritionTargets, UserProfile } from '../domain/models';
 import { USE_MOCK_DATA } from '../config/local';
 import { mockTopPicksResult } from '../mock/topPicks';
 import { addMealUseCase } from '../services/addMealUseCase';
-import { chatRepo, historyRepo } from '../services/container';
+import { computePersonalTargets } from '../services/computePersonalTargets';
+import { computeTodayMacrosUseCase } from '../services/computeTodayMacrosUseCase';
+import { chatRepo, historyRepo, userRepo } from '../services/container';
 import { createId } from '../utils/id';
 import { Card } from '../ui/components/Card';
 import { Chip } from '../ui/components/Chip';
@@ -20,6 +23,160 @@ import { typography } from '../ui/typography';
 
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MenuResults'>;
+
+type DishWithContextNote = DishPick & { contextNote?: string };
+
+function getContextNote(item: DishPick): string | undefined {
+  const value = (item as DishWithContextNote).contextNote;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function getContextNoteColor(contextNote: string): string {
+  const lower = contextNote.toLowerCase();
+  if (
+    lower.includes('great') ||
+    contextNote.includes('Helps') ||
+    lower.includes('need more protein')
+  ) {
+    return appTheme.colors.success;
+  }
+  return appTheme.colors.warning;
+}
+
+function formatNumber(value: number | null | undefined): string {
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : '-';
+}
+
+function formatList(items: string[] | undefined): string {
+  if (!items || items.length === 0) return 'none';
+  return items.join(', ');
+}
+
+function formatMacroProgress(params: {
+  label: string;
+  consumed: number;
+  target: number;
+}): string {
+  const consumed = Math.round(params.consumed);
+  const target = Math.round(params.target);
+  const remaining = Math.round(target - consumed);
+  const progress = target > 0 ? Math.round((consumed / target) * 100) : 0;
+  return `${params.label}: consumed=${consumed} target=${target} remaining=${remaining} progress=${progress}%`;
+}
+
+function buildUserContextLines(params: {
+  user: UserProfile | null;
+  eatenToday: MacroTotals | null;
+  savedTargets: NutritionTargets | null;
+}): string[] {
+  const { user, eatenToday, savedTargets } = params;
+  const computedTargets = user ? computePersonalTargets(user) : null;
+  const targets = savedTargets
+    ? {
+        caloriesKcal: savedTargets.caloriesKcal,
+        proteinG: savedTargets.proteinG,
+        carbsG: savedTargets.carbsG,
+        fatG: savedTargets.fatG,
+      }
+    : computedTargets;
+  const lines = [
+    'USER CONTEXT',
+    `goal: ${user?.goal ?? 'n/a'}`,
+    `dietaryPreferences: ${formatList(user?.dietaryPreferences)}`,
+    `allergies: ${formatList(user?.allergies)}`,
+    `dislikes: ${formatList(user?.dislikes)}`,
+    `targetsSource: ${savedTargets ? 'saved_nutrition_targets' : computedTargets ? 'computed_from_base_params' : 'unavailable'}`,
+    '',
+    'DAY BUDGET CONTEXT',
+  ];
+
+  if (!eatenToday) {
+    lines.push('dailyProgress: unavailable');
+    lines.push('');
+    return lines;
+  }
+
+  if (!targets) {
+    lines.push(
+      `consumedOnly: kcal=${Math.round(eatenToday.caloriesKcal)} P=${Math.round(eatenToday.proteinG)} C=${Math.round(eatenToday.carbsG)} F=${Math.round(eatenToday.fatG)}`
+    );
+    lines.push('targets: unavailable (add base parameters to compute daily targets)');
+    lines.push('');
+    return lines;
+  }
+
+  lines.push(`calories: ${formatMacroProgress({ label: 'kcal', consumed: eatenToday.caloriesKcal, target: targets.caloriesKcal })}`);
+  lines.push(`protein: ${formatMacroProgress({ label: 'proteinG', consumed: eatenToday.proteinG, target: targets.proteinG })}`);
+  lines.push(`carbs: ${formatMacroProgress({ label: 'carbsG', consumed: eatenToday.carbsG, target: targets.carbsG })}`);
+  lines.push(`fat: ${formatMacroProgress({ label: 'fatG', consumed: eatenToday.fatG, target: targets.fatG })}`);
+  lines.push('');
+  return lines;
+}
+
+function formatDishLine(section: 'TOP' | 'CAUTION' | 'AVOID', index: number, dish: DishPick): string[] {
+  const contextNote = getContextNote(dish);
+  const lines = [
+    `[${section}] #${index + 1} ${dish.name}`,
+    `reason: ${dish.shortReason}`,
+    `macros: kcal=${formatNumber(dish.estimatedCalories)} P=${formatNumber(dish.estimatedProteinG)} C=${formatNumber(dish.estimatedCarbsG)} F=${formatNumber(dish.estimatedFatG)}`,
+    `confidence: ${formatNumber(dish.confidencePercent)}%`,
+  ];
+  if (contextNote) lines.push(`contextNote: ${contextNote}`);
+  if (dish.pins?.length) lines.push(`pins: ${dish.pins.join(', ')}`);
+  if (dish.riskPins?.length) lines.push(`riskPins: ${dish.riskPins.join(', ')}`);
+  if (dish.dietBadges?.length) lines.push(`dietBadges: ${dish.dietBadges.join(', ')}`);
+  if (dish.quickFix) lines.push(`quickFix: ${dish.quickFix}`);
+  if (dish.allergenNote) lines.push(`allergenNote: ${dish.allergenNote}`);
+  if (dish.noLine) lines.push(`noLine: ${dish.noLine}`);
+  lines.push('');
+  return lines;
+}
+
+function buildScanCopyText(params: {
+  result: MenuScanResult;
+  analysisId: number | null;
+  topPlaceholderReason: string;
+  userContextLines: string[];
+}): string {
+  const { result, analysisId, topPlaceholderReason, userContextLines } = params;
+  const lines: string[] = [
+    'Buddy scan report',
+    `generatedAt: ${new Date().toISOString()}`,
+    `scanResultId: ${result.id}`,
+    `analysisId: ${analysisId ?? 'n/a'}`,
+    `createdAt: ${result.createdAt}`,
+    `inputImagesCount: ${result.inputImages.length}`,
+    `inputImages: ${result.inputImages.join(', ')}`,
+    `summary: ${result.summaryText}`,
+    `topPlaceholderReason: ${topPlaceholderReason}`,
+    '',
+    ...userContextLines,
+    `topCount: ${result.topPicks.length}`,
+    `cautionCount: ${result.caution.length}`,
+    `avoidCount: ${result.avoid.length}`,
+    '',
+    'TOP PICKS',
+    '',
+  ];
+
+  result.topPicks.forEach((dish, index) => {
+    lines.push(...formatDishLine('TOP', index, dish));
+  });
+
+  lines.push('CAUTION', '');
+  result.caution.forEach((dish, index) => {
+    lines.push(...formatDishLine('CAUTION', index, dish));
+  });
+
+  lines.push('AVOID', '');
+  result.avoid.forEach((dish, index) => {
+    lines.push(...formatDishLine('AVOID', index, dish));
+  });
+
+  return lines.join('\n').trim();
+}
 
 function TopPickCard({
   item,
@@ -33,10 +190,16 @@ function TopPickCard({
   const highConfidence = item.confidencePercent >= 70;
   const hasPins = (item.pins?.length ?? 0) > 0;
   const hasDietBadges = (item.dietBadges?.length ?? 0) > 0;
+  const contextNote = getContextNote(item);
   return (
     <Card style={styles.topPickCard}>
       <Text style={styles.dishName} numberOfLines={2} maxFontSizeMultiplier={1.2}>{item.name}</Text>
       <Text style={styles.reason} numberOfLines={2} maxFontSizeMultiplier={1.2}>{item.shortReason}</Text>
+      {contextNote ? (
+        <Text style={[styles.contextNote, { color: getContextNoteColor(contextNote) }]} numberOfLines={2} maxFontSizeMultiplier={1.2}>
+          {contextNote}
+        </Text>
+      ) : null}
       <MacroBar
         calories={item.estimatedCalories}
         proteinG={item.estimatedProteinG}
@@ -96,6 +259,7 @@ function CautionCard({
   onAskBuddy: (d: DishPick) => void;
   onShowQuickFix: (quickFix: string) => void;
 }): React.JSX.Element {
+  const contextNote = getContextNote(item);
   return (
     <View style={styles.compactCard}>
       <View style={styles.compactHead}>
@@ -107,6 +271,11 @@ function CautionCard({
         ) : null}
       </View>
       <Text style={styles.compactReason} numberOfLines={2} maxFontSizeMultiplier={1.2}>{item.shortReason}</Text>
+      {contextNote ? (
+        <Text style={[styles.contextNote, { color: getContextNoteColor(contextNote) }]} numberOfLines={2} maxFontSizeMultiplier={1.2}>
+          {contextNote}
+        </Text>
+      ) : null}
       <MacroBar
         calories={item.estimatedCalories}
         proteinG={item.estimatedProteinG}
@@ -147,10 +316,16 @@ function AvoidCard({
   onTakeDish: (d: DishPick) => void;
   onAskBuddy: (d: DishPick) => void;
 }): React.JSX.Element {
+  const contextNote = getContextNote(item);
   return (
     <View style={styles.compactCard}>
       <Text style={styles.compactTitle} numberOfLines={1} maxFontSizeMultiplier={1.2}>{item.name}</Text>
       <Text style={styles.compactReason} numberOfLines={2} maxFontSizeMultiplier={1.2}>{item.shortReason}</Text>
+      {contextNote ? (
+        <Text style={[styles.contextNote, { color: getContextNoteColor(contextNote) }]} numberOfLines={2} maxFontSizeMultiplier={1.2}>
+          {contextNote}
+        </Text>
+      ) : null}
       <MacroBar
         calories={item.estimatedCalories}
         proteinG={item.estimatedProteinG}
@@ -209,6 +384,18 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
   const insets = useSafeAreaInsets();
   const [result, setResult] = React.useState<MenuScanResult | null>(null);
   const [paywallHandled, setPaywallHandled] = React.useState(false);
+  const analysisIdFromRoute =
+    typeof route.params?.analysisId === 'number' && Number.isFinite(route.params.analysisId)
+      ? Math.max(1, Math.floor(route.params.analysisId))
+      : null;
+  const displayAnalysisId =
+    (typeof result?.analysisId === 'number' && Number.isFinite(result.analysisId)
+      ? Math.max(1, Math.floor(result.analysisId))
+      : null) ??
+    analysisIdFromRoute;
+  const topPlaceholderReason = result?.topPlaceholderReason?.trim()
+    ? result.topPlaceholderReason.trim()
+    : 'You’ve hit your goal for today.';
 
   React.useEffect(() => {
     void (async () => {
@@ -240,7 +427,7 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
     })();
   }, [result]);
 
-  const handleTakeDish = React.useCallback(async (dish: DishPick): Promise<void> => {
+  const handleTakeDish = React.useCallback(async (dish: DishPick, section: 'top' | 'caution' | 'avoid'): Promise<void> => {
     const mealId = createId('meal');
     const macros = {
       caloriesKcal: dish.estimatedCalories ?? 0,
@@ -256,6 +443,14 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
         source: 'text',
         macros,
         notes: dish.shortReason,
+        pins: dish.pins && dish.pins.length > 0 ? dish.pins : undefined,
+        riskPins: dish.riskPins && dish.riskPins.length > 0 ? dish.riskPins : undefined,
+        dietBadges: dish.dietBadges && dish.dietBadges.length > 0 ? dish.dietBadges : undefined,
+        confidencePercent: Number.isFinite(dish.confidencePercent) ? dish.confidencePercent : undefined,
+        allergenNote: dish.allergenNote ?? null,
+        noLine: dish.noLine ?? null,
+        quickFix: section === 'caution' ? dish.quickFix ?? null : undefined,
+        menuSection: section,
       },
       { historyRepo },
     );
@@ -281,6 +476,29 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
     Alert.alert('Suggested change', quickFix);
   }, []);
 
+  const handleCopyScanReport = React.useCallback(async (): Promise<void> => {
+    if (!result) {
+      Alert.alert('Nothing to copy', 'No scan result is loaded yet.');
+      return;
+    }
+
+    const [user, eatenToday, savedTargets] = await Promise.all([
+      userRepo.getUser(),
+      computeTodayMacrosUseCase(new Date(), { historyRepo }),
+      userRepo.getNutritionTargets(),
+    ]);
+
+    const userContextLines = buildUserContextLines({ user, eatenToday, savedTargets });
+    const text = buildScanCopyText({
+      result,
+      analysisId: displayAnalysisId,
+      topPlaceholderReason,
+      userContextLines,
+    });
+    await Clipboard.setStringAsync(text);
+    Alert.alert('Copied', 'Scan report copied to clipboard.');
+  }, [displayAnalysisId, result, topPlaceholderReason]);
+
   const scrollPaddingBottom = insets.bottom + spec.spacing[24];
 
   return (
@@ -288,20 +506,40 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
       <View style={styles.root}>
         {/* Custom header: iOS-style back (chevron only), no title, no menu */}
         <View style={[styles.header, { paddingTop: insets.top + spec.headerPaddingTopOffset }]}>
-          <View style={styles.headerRow}>
-            <Pressable
-              style={styles.headerBackWrap}
-              onPress={() => navigation.goBack()}
-              hitSlop={8}
-            >
-              <Text style={styles.headerBackChevron}>‹</Text>
-            </Pressable>
-            <View style={styles.headerSpacer} />
-            <View style={styles.headerSpacer} />
-          </View>
+	          <View style={styles.headerRow}>
+	            <Pressable
+	              style={styles.headerBackWrap}
+	              onPress={() => navigation.goBack()}
+	              hitSlop={8}
+	            >
+	              <Text style={styles.headerBackChevron}>‹</Text>
+	            </Pressable>
+	            <View style={styles.headerSpacer} />
+	            <Pressable
+	              style={({ pressed }) => [
+	                styles.headerCopyWrap,
+	                !result && styles.headerCopyWrapDisabled,
+	                pressed && result && styles.btnPressed,
+	              ]}
+	              onPress={() => {
+	                void handleCopyScanReport();
+	              }}
+	              disabled={!result}
+	              hitSlop={8}
+	            >
+	              <Text style={[styles.headerCopyText, !result && styles.headerCopyTextDisabled]} maxFontSizeMultiplier={1.2}>
+	                Copy
+	              </Text>
+	            </Pressable>
+	          </View>
           <View style={styles.titleBlock}>
             <Text style={styles.pageTitle} maxFontSizeMultiplier={1.2}>Menu picks</Text>
             <Text style={styles.pageSubtitle} maxFontSizeMultiplier={1.2}>Based on your goal and profile</Text>
+            {displayAnalysisId ? (
+              <Text style={styles.scanIdText} maxFontSizeMultiplier={1.2}>
+                Scan ID #{displayAnalysisId}
+              </Text>
+            ) : null}
           </View>
         </View>
 
@@ -323,14 +561,25 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
               <View style={styles.section}>
                 <SectionTitle materialIcon="local-fire-department" iconColor="#EA4545" title="Top picks" />
                 <View style={styles.cardsColumn}>
-                  {result.topPicks.slice(0, 3).map((item) => (
-                    <TopPickCard
-                      key={`t_${item.name}`}
-                      item={item}
-                      onTakeDish={handleTakeDish}
-                      onAskBuddy={() => navigation.navigate('Chat', { resultId: result.id })}
-                    />
-                  ))}
+                  {result.topPicks.length > 0 ? (
+                    result.topPicks.map((item) => (
+                      <TopPickCard
+                        key={`t_${item.name}`}
+                        item={item}
+                        onTakeDish={(dish) => void handleTakeDish(dish, 'top')}
+                        onAskBuddy={() => navigation.navigate('Chat', { resultId: result.id })}
+                      />
+                    ))
+                  ) : (
+                    <Card style={styles.topPlaceholderCard}>
+                      <Text style={styles.topPlaceholderTitle} maxFontSizeMultiplier={1.2}>
+                        No top picks for now
+                      </Text>
+                      <Text style={styles.topPlaceholderText} maxFontSizeMultiplier={1.2}>
+                        {topPlaceholderReason}
+                      </Text>
+                    </Card>
+                  )}
                 </View>
               </View>
 
@@ -338,7 +587,7 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
                 <SectionTitle icon="⚠" iconColor={appTheme.colors.warning} title="OK with caution" />
                 <View style={styles.cardsColumn}>
                   {result.caution.map((item) => (
-                    <CautionCard key={`c_${item.name}`} item={item} onTakeDish={handleTakeDish} onAskBuddy={() => navigation.navigate('Chat', { resultId: result.id })} onShowQuickFix={handleShowQuickFix} />
+                    <CautionCard key={`c_${item.name}`} item={item} onTakeDish={(dish) => void handleTakeDish(dish, 'caution')} onAskBuddy={() => navigation.navigate('Chat', { resultId: result.id })} onShowQuickFix={handleShowQuickFix} />
                   ))}
                 </View>
               </View>
@@ -347,7 +596,7 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
                 <SectionTitle icon="⊘" iconColor={appTheme.colors.danger} title="Better avoid" />
                 <View style={styles.cardsColumn}>
                   {result.avoid.map((item) => (
-                    <AvoidCard key={`a_${item.name}`} item={item} onTakeDish={handleTakeDish} onAskBuddy={() => navigation.navigate('Chat', { resultId: result.id })} />
+                    <AvoidCard key={`a_${item.name}`} item={item} onTakeDish={(dish) => void handleTakeDish(dish, 'avoid')} onAskBuddy={() => navigation.navigate('Chat', { resultId: result.id })} />
                   ))}
                 </View>
               </View>
@@ -382,9 +631,32 @@ const styles = StyleSheet.create({
   },
   headerBackChevron: { fontSize: 32, color: appTheme.colors.textPrimary, fontWeight: '300' },
   headerSpacer: { width: spec.minTouchTarget, height: spec.minTouchTarget },
+  headerCopyWrap: {
+    minWidth: spec.minTouchTarget,
+    minHeight: spec.minTouchTarget,
+    paddingHorizontal: spec.spacing[12],
+    borderRadius: spec.radius.pill,
+    borderWidth: 1,
+    borderColor: appTheme.colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: appTheme.colors.surface,
+  },
+  headerCopyWrapDisabled: {
+    backgroundColor: appTheme.colors.warningSoft,
+  },
+  headerCopyText: {
+    ...typography.footnote,
+    color: appTheme.colors.textPrimary,
+    fontWeight: '700',
+  },
+  headerCopyTextDisabled: {
+    color: appTheme.colors.textSecondary,
+  },
   titleBlock: { gap: 2 },
   pageTitle: { ...typography.h1, color: appTheme.colors.textPrimary },
   pageSubtitle: { ...typography.body, color: appTheme.colors.textSecondary },
+  scanIdText: { ...typography.bodySemibold, color: appTheme.colors.textSecondary, marginTop: spec.spacing[4] },
   scroll: { flex: 1 },
   scrollContent: { paddingTop: spec.spacing[8] },
   section: { marginBottom: spec.spacing[32] },
@@ -476,6 +748,11 @@ const styles = StyleSheet.create({
   compactHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   compactTitle: { ...typography.bodySemibold, color: appTheme.colors.textPrimary, flex: 1 },
   compactReason: { ...typography.caption, color: appTheme.colors.textSecondary },
+  contextNote: {
+    color: appTheme.colors.warning,
+    fontSize: appTheme.typography.small.fontSize,
+    fontStyle: 'italic',
+  },
   riskPinsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spec.spacing[8] },
   quickFixInfoBtn: {
     width: 24,
@@ -492,6 +769,9 @@ const styles = StyleSheet.create({
     fontSize: appTheme.typography.caption1.fontSize,
     fontWeight: '700',
   },
+  topPlaceholderCard: { padding: spec.cardPadding, gap: spec.spacing[8] },
+  topPlaceholderTitle: { ...typography.bodySemibold, color: appTheme.colors.textPrimary },
+  topPlaceholderText: { ...typography.body, color: appTheme.colors.textSecondary },
   emptyCard: { padding: spec.cardPadding },
   emptyText: { ...typography.body, color: appTheme.colors.textSecondary },
 });

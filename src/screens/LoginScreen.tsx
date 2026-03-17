@@ -8,6 +8,7 @@ import {
   isAuthCancelledError,
   signInWithProvider,
 } from '../auth';
+import { APPLE_ONLY_AUTH } from '../config/flags';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { appTheme } from '../design/theme';
 import { useAppAlert } from '../ui/components/AppAlertProvider';
@@ -105,7 +106,7 @@ export function LoginScreen({ navigation }: Props): React.JSX.Element {
             Continue
           </Text>
           <Text style={styles.subtitle} maxFontSizeMultiplier={1.2}>
-            Sign in to securely sync your Buddy profile.
+            Sign in with Apple to securely sync your Buddy profile.
           </Text>
 
           {isCheckingAvailability ? (
@@ -127,13 +128,15 @@ export function LoginScreen({ navigation }: Props): React.JSX.Element {
             </View>
           )}
 
-          <PrimaryButton
-            title="Continue with Google"
-            onPress={() => void handleSignIn('google')}
-            disabled={isLoading}
-            loading={activeProvider === 'google'}
-            style={styles.googleButton}
-          />
+          {!APPLE_ONLY_AUTH ? (
+            <PrimaryButton
+              title="Continue with Google"
+              onPress={() => void handleSignIn('google')}
+              disabled={isLoading}
+              loading={activeProvider === 'google'}
+              style={styles.googleButton}
+            />
+          ) : null}
 
           {activeProvider === 'apple' ? (
             <ActivityIndicator color={appTheme.colors.accent} />

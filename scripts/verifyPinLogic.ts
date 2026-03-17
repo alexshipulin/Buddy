@@ -89,7 +89,7 @@ console.log('\n[Step 2] Whitelist integrity checks');
 
 for (const goal of GOALS) {
   const top = getPinWhitelist(goal);
-  assert(top.length === 12, `${goal}: top whitelist has 12 pins (got ${top.length})`);
+  assert(top.length > 0, `${goal}: top whitelist is not empty (got ${top.length})`);
   assert(new Set(top).size === top.length, `${goal}: top whitelist unique`);
 
   const caution = getCautionPinWhitelist(goal);
@@ -102,19 +102,20 @@ for (const goal of GOALS) {
   assert(!avoid.includes('Diet Mismatch'), `${goal}: avoid no "Diet Mismatch"`);
 }
 
-// Lose fat should have "High calories" in both caution and avoid
-assert(getCautionPinWhitelist('Lose fat').includes('High calories'), 'Lose fat caution has "High calories"');
-assert(getAvoidPinWhitelist('Lose fat').includes('High calories'), 'Lose fat avoid has "High calories"');
-// No list may have "High calories" more than once
+// Lose fat should have "High-calorie" in both caution and avoid
+assert(getCautionPinWhitelist('Lose fat').includes('High-calorie'), 'Lose fat caution has "High-calorie"');
+assert(getAvoidPinWhitelist('Lose fat').includes('High-calorie'), 'Lose fat avoid has "High-calorie"');
+// No list may have "High-calorie" more than once
 for (const goal of GOALS) {
   const allPins = [...getCautionPinWhitelist(goal), ...getAvoidPinWhitelist(goal)];
-  const count = allPins.filter((p) => p === 'High calories').length;
-  assert(count <= 2, `${goal}: "High calories" not duplicated within a single list (total across both: ${count})`);
+  const count = allPins.filter((p) => p === 'High-calorie').length;
+  assert(count <= 2, `${goal}: "High-calorie" not duplicated within a single list (total across both: ${count})`);
 }
 
 // Gain muscle top checks
 const gainTop = getPinWhitelist('Gain muscle');
-assert(gainTop.includes('Best protein'), 'Gain muscle top has "Best protein"');
+assert(gainTop.includes('High protein'), 'Gain muscle top has "High protein"');
+assert(!gainTop.includes('Best protein'), 'Gain muscle top no "Best protein"');
 assert(!gainTop.includes('Protein-rich'), 'Gain muscle top no "Protein-rich"');
 assert(!gainTop.includes('Complete protein'), 'Gain muscle top no "Complete protein"');
 
@@ -156,7 +157,7 @@ function makeResponse(overrides: Partial<{
     topPicks: [{
       name: 'Test dish',
       shortReason: 'A valid reason for testing purposes here.',
-      pins: overrides.topPins ?? ['Low calorie', 'High fiber', 'Lean protein'],
+      pins: overrides.topPins ?? ['Low-calorie', 'High fiber', 'Lean protein'],
       confidencePercent: 80,
       dietBadges: [],
       allergenNote: null,
@@ -165,7 +166,7 @@ function makeResponse(overrides: Partial<{
     caution: [{
       name: 'Caution dish',
       shortReason: 'A valid reason for testing purposes here.',
-      riskPins: overrides.cautionRiskPins ?? ['High calories'],
+      riskPins: overrides.cautionRiskPins ?? ['High-calorie'],
       quickFix: 'Try: sauce on the side',
       confidencePercent: 60,
       dietBadges: [],
@@ -175,7 +176,7 @@ function makeResponse(overrides: Partial<{
     avoid: [{
       name: 'Avoid dish',
       shortReason: 'A valid reason for testing purposes here.',
-      riskPins: overrides.avoidRiskPins ?? ['High calories'],
+      riskPins: overrides.avoidRiskPins ?? ['High-calorie'],
       confidencePercent: 70,
       dietBadges: [],
       allergenNote: null,
@@ -227,22 +228,52 @@ assertNoThrow(
   'validator accepts avoid riskPins: ["Not Paleo"] with injected whitelist'
 );
 
-// 4f: "High calories" in caution riskPins → must pass
+// 4f: canonical "High-calorie" in caution riskPins → must pass
 assertNoThrow(
-  () => validateMenuAnalysisResponse({ response: makeResponse({ cautionRiskPins: ['High calories'] }), ...validationParams }),
-  'validator accepts caution riskPins: ["High calories"]'
+  () => validateMenuAnalysisResponse({ response: makeResponse({ cautionRiskPins: ['High-calorie'] }), ...validationParams }),
+  'validator accepts caution riskPins: ["High-calorie"]'
 );
 
-// 4g: old top pin "Lower sodium" → must throw
+// 4g: legacy caution pin "High Sugar" is normalized to "High sugar" → must pass
+const normalizedHighSugar = validateMenuAnalysisResponse({
+  response: makeResponse({ cautionRiskPins: ['High Sugar', 'Allergen'] }),
+  ...validationParams,
+});
+assert(
+  normalizedHighSugar.caution[0]?.riskPins?.includes('High sugar') ?? false,
+  'validator normalizes caution risk pin "High Sugar" to "High sugar"'
+);
+
+// 4h: removed pin "No empty calories" is dropped from riskPins and payload still validates
+const droppedRemovedPin = validateMenuAnalysisResponse({
+  response: makeResponse({ cautionRiskPins: ['No empty calories', 'High-calorie'] }),
+  ...validationParams,
+});
+assert(
+  droppedRemovedPin.caution[0]?.riskPins?.includes('No empty calories') === false,
+  'validator drops removed pin "No empty calories" from final output'
+);
+assert(
+  droppedRemovedPin.caution[0]?.riskPins?.includes('High-calorie') ?? false,
+  'validator keeps canonical pins when removed pins are present'
+);
+
+// 4i: legacy top pin "Low calorie" is normalized to "Low-calorie" → must pass
+assertNoThrow(
+  () => validateMenuAnalysisResponse({ response: makeResponse({ topPins: ['Low calorie', 'Low sodium', 'Lean protein'] }), ...validationParams }),
+  'validator normalizes top pin "Low calorie" to "Low-calorie"'
+);
+
+// 4j: old top pin "Lower sodium" → must throw
 assertThrows(
-  () => validateMenuAnalysisResponse({ response: makeResponse({ topPins: ['Low calorie', 'Lower sodium', 'Lean protein'] }), ...validationParams }),
+  () => validateMenuAnalysisResponse({ response: makeResponse({ topPins: ['Low-calorie', 'Lower sodium', 'Lean protein'] }), ...validationParams }),
   MenuAnalysisValidationError,
   'validator rejects top pin "Lower sodium" (legacy)'
 );
 
-// 4h: new top pin "Low sodium" → must pass
+// 4k: canonical top pin "Low sodium" → must pass
 assertNoThrow(
-  () => validateMenuAnalysisResponse({ response: makeResponse({ topPins: ['Low calorie', 'Low sodium', 'Lean protein'] }), ...validationParams }),
+  () => validateMenuAnalysisResponse({ response: makeResponse({ topPins: ['Low-calorie', 'Low sodium', 'Lean protein'] }), ...validationParams }),
   'validator accepts top pin "Low sodium" (new)'
 );
 
@@ -256,5 +287,5 @@ if (failed > 0) {
   console.log('Step 5 (manual): Run a scan with goal "Lose fat" + diet "Paleo (whole foods)":');
   console.log('  – Expect "Not Paleo" in caution/avoid pins');
   console.log('  – Expect NO "Diet Mismatch", "High Cals", or "Very High Cals" in UI');
-  console.log('  – Expect "High calories" as the only calorie risk pin');
+  console.log('  – Expect "High-calorie" as the only calorie risk pin');
 }

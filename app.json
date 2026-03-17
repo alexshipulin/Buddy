@@ -18,6 +18,7 @@
       }
     },
     "android": {
+      "package": "com.alexshipulin.buddy",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
@@ -30,9 +31,11 @@
       ]
     },
     "plugins": [
+      "expo-apple-authentication",
       "expo-camera",
       "expo-image-picker",
-      "expo-media-library"
+      "expo-media-library",
+      "expo-secure-store"
     ],
     "extra": {
       "eas": {

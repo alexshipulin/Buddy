@@ -18,10 +18,14 @@ import { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-export function AppNavigator(): React.JSX.Element {
+type AppNavigatorProps = {
+  initialRouteName?: keyof RootStackParamList;
+};
+
+export function AppNavigator({ initialRouteName = 'Welcome' }: AppNavigatorProps): React.JSX.Element {
   return (
     <Stack.Navigator
-      initialRouteName="Welcome"
+      initialRouteName={initialRouteName}
       screenOptions={{
         headerShown: false,
         headerStyle: { backgroundColor: 'transparent' },

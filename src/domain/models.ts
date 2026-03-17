@@ -41,6 +41,56 @@ export type HistoryItem = {
   payloadRef: string;
   imageUris?: string[];
 };
+
+export type DishQualityFlags = {
+  leanProtein?: boolean;
+  veggieForward?: boolean;
+  wholeFood?: boolean;
+  fried?: boolean;
+  dessert?: boolean;
+  sugaryDrink?: boolean;
+  refinedCarbHeavy?: boolean;
+  highFatSauce?: boolean;
+  processed?: boolean;
+};
+
+export type DishAllergenSignals = {
+  contains?: string[];
+  unclear?: boolean;
+  noListedAllergen?: boolean;
+};
+
+export type DishDislikeSignals = {
+  containsDislikedIngredient?: boolean;
+  removableDislikedIngredients?: string[];
+};
+
+export type DishConstructorMeta = {
+  isCustom?: boolean;
+  components?: string[];
+};
+
+/** Flat extraction object returned by AI before deterministic app-side ranking. */
+export type ExtractedDish = {
+  id?: string;
+  name: string;
+  menuSection?: string | null;
+  shortDescription?: string | null;
+  estimatedCalories: number | null;
+  estimatedProteinG: number | null;
+  estimatedCarbsG: number | null;
+  estimatedFatG: number | null;
+  confidencePercent: number;
+  dietBadges?: string[];
+  flags?: DishQualityFlags;
+  allergenSignals?: DishAllergenSignals;
+  dislikes?: DishDislikeSignals;
+  constructorMeta?: DishConstructorMeta;
+};
+
+export type MenuExtractionResponse = {
+  dishes: ExtractedDish[];
+};
 /** Menu scan dish (TZ v0.1). Used in MenuScanResult topPicks/caution/avoid. */
 export type DishPick = {
   name: string;
@@ -63,11 +113,19 @@ export type DishPick = {
 
 export type MenuScanResult = {
   id: string;
+  /** Sequential local analysis id used for debugging and support. */
+  analysisId?: number;
+  /** Raw extraction used for deterministic app-side ranking (v2+). */
+  extractedDishes?: ExtractedDish[];
+  /** Version marker for recommendation pipeline. */
+  recommendationVersion?: number;
   createdAt: string;
   inputImages: string[];
+  /** Backward-compat grouped buckets for old screens/history payloads. */
   topPicks: DishPick[];
   caution: DishPick[];
   avoid: DishPick[];
+  topPlaceholderReason?: string;
   summaryText: string;
   disclaimerFlag: true;
 };
@@ -76,19 +134,31 @@ export type MenuScanResult = {
 export type DishRecommendation = {
   name: string;
   reasonShort: string;
+  contextNote?: string;
   tags: string[];
+  nutrition?: { caloriesKcal: number; proteinG: number; carbsG: number; fatG: number };
   macros?: MacroTotals;
   matchPercent?: number;
   warningLabel?: string;
 };
 export type MealEntry = {
   id: string;
+  /** Sequential local analysis id used for debugging and support. */
+  analysisId?: number;
   createdAt: string;
   title: string;
   macros: MacroTotals;
   notes?: string;
   source: 'photo' | 'text';
   imageUri?: string;
+  pins?: string[];
+  riskPins?: string[];
+  dietBadges?: string[];
+  confidencePercent?: number;
+  allergenNote?: string | null;
+  noLine?: string | null;
+  quickFix?: string | null;
+  menuSection?: 'top' | 'caution' | 'avoid';
 };
 export type TrialState = {
   firstResultAt?: string;

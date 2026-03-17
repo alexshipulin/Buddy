@@ -2,6 +2,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../app/navigation/types';
 import { trialRepo } from '../services/container';
 import { useAppAlert } from '../ui/components/AppAlertProvider';
@@ -95,7 +96,7 @@ export function PaywallScreen({ navigation, route }: Props): React.JSX.Element {
             accessibilityRole="button"
             accessibilityLabel="Close"
           >
-            <Text style={styles.closeIcon}>✕</Text>
+            <MaterialIcons name="close" size={20} color="#64748B" />
           </Pressable>
 
           <Pressable
@@ -264,13 +265,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  closeIcon: {
-    color: '#64748B',
-    fontSize: 20,
-    lineHeight: 20,
-    fontWeight: '500',
-    marginTop: -1,
   },
   restoreText: {
     color: '#94A3B8',

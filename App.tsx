@@ -39,13 +39,28 @@ const navRef = createNavigationContainerRef<RootStackParamList>();
 export default function App(): React.JSX.Element {
   const [isBootstrapped, setIsBootstrapped] = React.useState(false);
   const [isNavReady, setIsNavReady] = React.useState(false);
+  const [initialRouteName, setInitialRouteName] = React.useState<keyof RootStackParamList>('Welcome');
 
   React.useEffect(() => {
     const bootstrap = async (): Promise<void> => {
       try {
         await removeLegacyMockDataIfNeeded();
+        const [prefs, user] = await Promise.all([appPrefsRepo.getPrefs(), userRepo.getUser()]);
+        const hasUserOnboardingData =
+          Boolean(user) ||
+          Boolean(user?.baseParams) ||
+          (user?.goal != null && user.goal !== 'Maintain weight') ||
+          (user?.dietaryPreferences?.length ?? 0) > 0 ||
+          (user?.allergies?.length ?? 0) > 0 ||
+          (user?.dislikes?.length ?? 0) > 0;
+        const shouldStartAtHome = prefs.onboardingCompleted || hasUserOnboardingData;
+        if (shouldStartAtHome && !prefs.onboardingCompleted) {
+          await appPrefsRepo.markOnboardingCompleted();
+        }
+        setInitialRouteName(shouldStartAtHome ? 'Home' : 'Welcome');
       } catch (error) {
         console.warn('Mock data cleanup failed, continuing startup.', error);
+        setInitialRouteName('Welcome');
       } finally {
         setIsBootstrapped(true);
       }
@@ -71,7 +86,7 @@ export default function App(): React.JSX.Element {
       <NavigationContainer ref={navRef} theme={navTheme} onReady={() => setIsNavReady(true)}>
         <AppAlertProvider>
           <StatusBar style="dark" />
-          {isBootstrapped ? <AppNavigator /> : null}
+          {isBootstrapped ? <AppNavigator initialRouteName={initialRouteName} /> : null}
         </AppAlertProvider>
       </NavigationContainer>
     </SafeAreaProvider>
