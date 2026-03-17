@@ -206,7 +206,7 @@ async function requestMenuRawAnalysis(params: {
   const mode = params.mode ?? 'normal';
   const photoNote =
     params.imageParts.length > 1
-      ? `IMPORTANT: There are ${params.imageParts.length} menu photos. List ALL dishes from ALL photos combined into a single dishes array.`
+      ? `IMPORTANT: There are ${params.imageParts.length} menu photos. List ALL menu items from ALL photos combined into a single dishes array.`
       : '';
   const promptLines = [
     'Return ONLY JSON. No markdown. No extra text.',
@@ -214,15 +214,16 @@ async function requestMenuRawAnalysis(params: {
     `User goal: ${params.userGoal}`,
     `User dislikes to check specifically: ${params.userDislikes.length > 0 ? params.userDislikes.join(', ') : 'none'}`,
     '',
-    'IMPORTANT: List EVERY SINGLE dish, item, and beverage visible on the menu — do not skip any.',
-    'Include all sections: starters, mains, sides, desserts, drinks, specials.',
-    'If you are unsure about a dish, still include it with your best estimate.',
+    'YOU MUST list every single item printed on this menu — no exceptions.',
+    'Include ALL sections: Small Plates, Big Plates, Starters, Mains, Sides, Desserts, Drinks, Snacks, Specials — whatever sections exist.',
+    'Do NOT skip sides, desserts, beverages, or any item you consider minor.',
+    'If you skip even one item, the response is incomplete and wrong.',
     'For each item return:',
-    '- name: exact dish name as written on the menu',
+    '- name: exact item name as written on the menu',
     '- nutrition: estimated caloriesKcal, proteinG, carbsG, fatG (assume standard restaurant portion ~300-400g)',
     '- detected_dislikes: match ONLY from this fixed list: Spicy, Avocado, Coriander, Mushrooms, Onions, Garlic, Olives, Seafood, Mayonnaise, Tomatoes',
     '- detected_allergies: match ONLY from this fixed list: Milk, Eggs, Fish, Crustacean shellfish, Tree nuts, Peanuts, Wheat, Soy, Sesame, Celery, Lupin, Molluscs, Mustard, Sulphites',
-    '- diet_flags: set true only if the dish genuinely qualifies',
+    '- diet_flags: set true only if the item genuinely qualifies',
     '- cooking_flags:',
     '    fried: true if deep-fried, pan-fried, or battered',
     '    high_sugar: true if dessert, sweetened sauce, glazed, or sugary drink',
@@ -250,6 +251,11 @@ async function requestMenuRawAnalysis(params: {
   if (photoNote) {
     promptLines.push('', photoNote);
   }
+  promptLines.push(
+    '',
+    'FINAL CHECK: Before responding, verify you have included items from EVERY section visible on the menu.',
+    'Count the sections on the menu photo and make sure your dishes array has an entry for each item in each section.'
+  );
   const prompt = promptLines.join('\n');
   const maxOutputTokens = mode === 'strict_json_retry' ? 2600 : mode === 'completeness_retry' ? 3800 : 3200;
   const lightweightMaxOutputTokens = Math.max(1200, Math.round(maxOutputTokens * 0.7));
@@ -286,7 +292,7 @@ async function requestMenuRawAnalysis(params: {
       responseSchema: MENU_RAW_SCHEMA,
       temperature: 0.2,
       maxOutputTokens,
-      thinkingConfig: { thinkingBudget: 512 },
+      thinkingConfig: { thinkingBudget: 1024 },
     },
   };
 
@@ -295,7 +301,7 @@ async function requestMenuRawAnalysis(params: {
     generationConfig: {
       temperature: 0.2,
       maxOutputTokens,
-      thinkingConfig: { thinkingBudget: 512 },
+      thinkingConfig: { thinkingBudget: 1024 },
     },
   });
 
@@ -304,7 +310,7 @@ async function requestMenuRawAnalysis(params: {
     generationConfig: {
       temperature: 0.2,
       maxOutputTokens: lightweightMaxOutputTokens,
-      thinkingConfig: { thinkingBudget: 512 },
+      thinkingConfig: { thinkingBudget: 1024 },
     },
   });
 
