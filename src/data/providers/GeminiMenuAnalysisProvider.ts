@@ -155,7 +155,7 @@ export class GeminiMenuAnalysisProvider implements MenuAnalysisProvider {
         `dislikes:${normalizedDislikes.join(',')}`,
         `allergies:${normalizedAllergies.join(',')}`,
         `dietary:${normalizedDietaryPrefs.join(',')}`,
-        'menu_v11_multi_cache',
+        'menu_v11_all_sections',
       ]);
 
       const cachedRawAnalysis = await getCached<Awaited<ReturnType<typeof analyzeMenuWithGemini>>>(cacheKey);

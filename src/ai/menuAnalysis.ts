@@ -215,10 +215,10 @@ async function requestMenuRawAnalysis(params: {
     `User dislikes to check specifically: ${params.userDislikes.length > 0 ? params.userDislikes.join(', ') : 'none'}`,
     '',
     'YOU MUST list every single item printed on this menu — no exceptions.',
-    'Include ALL sections: Small Plates, Big Plates, Starters, Mains, Sides, Desserts, Drinks, Snacks, Specials — whatever sections exist.',
-    'Do NOT skip sides, desserts, beverages, or any item you consider minor.',
-    'If you skip even one item, the response is incomplete and wrong.',
-    'For each item return:',
+    'Include ALL sections without exception: Small Plates, Big Plates, Starters, Mains, Sides, Desserts, Drinks, Snacks, Specials — whatever sections exist on this menu.',
+    'Do NOT skip sides, desserts, beverages, or any item you consider minor or unimportant.',
+    'If you skip even one printed menu item, the response is wrong.',
+    'For each menu item return:',
     '- name: exact item name as written on the menu',
     '- nutrition: estimated caloriesKcal, proteinG, carbsG, fatG (assume standard restaurant portion ~300-400g)',
     '- detected_dislikes: match ONLY from this fixed list: Spicy, Avocado, Coriander, Mushrooms, Onions, Garlic, Olives, Seafood, Mayonnaise, Tomatoes',
@@ -253,8 +253,8 @@ async function requestMenuRawAnalysis(params: {
   }
   promptLines.push(
     '',
-    'FINAL CHECK: Before responding, verify you have included items from EVERY section visible on the menu.',
-    'Count the sections on the menu photo and make sure your dishes array has an entry for each item in each section.'
+    'FINAL CHECK: Before you write your response, visually scan every section header on the menu photo and verify your dishes array contains every item listed under each section.',
+    'Count sections, count items per section, confirm your array total matches.'
   );
   const prompt = promptLines.join('\n');
   const maxOutputTokens = mode === 'strict_json_retry' ? 2600 : mode === 'completeness_retry' ? 3800 : 3200;
