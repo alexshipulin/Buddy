@@ -19,8 +19,8 @@ export function ListItemRow({ title, subtitle, rightText, onPress }: Props): Rea
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
   left: { flexShrink: 1, gap: 4 },
-  title: { color: appTheme.colors.textPrimary, fontSize: appTheme.typography.body, fontWeight: '600' },
-  subtitle: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.small },
-  right: { color: appTheme.colors.accent, fontSize: appTheme.typography.small, fontWeight: '600' },
+  title: { color: appTheme.colors.textPrimary, fontSize: appTheme.typography.body.fontSize, fontWeight: '600' },
+  subtitle: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.small.fontSize },
+  right: { color: appTheme.colors.accent, fontSize: appTheme.typography.small.fontSize, fontWeight: '600' },
   pressed: { opacity: 0.75 },
 });

@@ -22,8 +22,8 @@ export function ProgressBarRow({ label, valueLabel, progress }: Props): React.JS
 const styles = StyleSheet.create({
   container: { gap: appTheme.spacing.xs },
   row: { flexDirection: 'row', justifyContent: 'space-between' },
-  label: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.small },
-  value: { color: appTheme.colors.textPrimary, fontSize: appTheme.typography.small, fontWeight: '600' },
+  label: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.small.fontSize },
+  value: { color: appTheme.colors.textPrimary, fontSize: appTheme.typography.small.fontSize, fontWeight: '600' },
   track: { backgroundColor: appTheme.colors.progressTrack, borderRadius: appTheme.radius.pill, height: 8, overflow: 'hidden' },
   fill: { backgroundColor: appTheme.colors.accent, height: '100%', borderRadius: appTheme.radius.pill },
 });

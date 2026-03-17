@@ -4,9 +4,24 @@ import { createNavigationContainerRef, DefaultTheme, NavigationContainer } from 
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppNavigator } from './src/app/navigation/AppNavigator';
 import { RootStackParamList } from './src/app/navigation/types';
-import { seedMockDataIfNeeded } from './src/data/seed/seedMockData';
+import { removeLegacyMockDataIfNeeded } from './src/data/seed/removeLegacyMockData';
 import { appTheme } from './src/design/theme';
-import { appPrefsRepo, chatRepo, historyRepo, trialRepo, userRepo } from './src/services/container';
+import { appPrefsRepo, userRepo } from './src/services/container';
+import { AppAlertProvider } from './src/ui/components/AppAlertProvider';
+
+function maybeCompleteAuthSessionSafely(): void {
+  try {
+    const moduleName = 'expo-web-browser';
+    const webBrowser = require(moduleName) as {
+      maybeCompleteAuthSession?: () => void;
+    };
+    webBrowser.maybeCompleteAuthSession?.();
+  } catch {
+    // Optional dependency missing; app can still run without OAuth redirect helper.
+  }
+}
+
+maybeCompleteAuthSessionSafely();
 
 const navTheme = {
   ...DefaultTheme,
@@ -24,14 +39,28 @@ const navRef = createNavigationContainerRef<RootStackParamList>();
 export default function App(): React.JSX.Element {
   const [isBootstrapped, setIsBootstrapped] = React.useState(false);
   const [isNavReady, setIsNavReady] = React.useState(false);
+  const [initialRouteName, setInitialRouteName] = React.useState<keyof RootStackParamList>('Welcome');
 
   React.useEffect(() => {
     const bootstrap = async (): Promise<void> => {
       try {
-        await seedMockDataIfNeeded({ userRepo, historyRepo, trialRepo, chatRepo });
+        await removeLegacyMockDataIfNeeded();
+        const [prefs, user] = await Promise.all([appPrefsRepo.getPrefs(), userRepo.getUser()]);
+        const hasUserOnboardingData =
+          Boolean(user) ||
+          Boolean(user?.baseParams) ||
+          (user?.goal != null && user.goal !== 'Maintain weight') ||
+          (user?.dietaryPreferences?.length ?? 0) > 0 ||
+          (user?.allergies?.length ?? 0) > 0 ||
+          (user?.dislikes?.length ?? 0) > 0;
+        const shouldStartAtHome = prefs.onboardingCompleted || hasUserOnboardingData;
+        if (shouldStartAtHome && !prefs.onboardingCompleted) {
+          await appPrefsRepo.markOnboardingCompleted();
+        }
+        setInitialRouteName(shouldStartAtHome ? 'Home' : 'Welcome');
       } catch (error) {
-        // Avoid blank screen if bootstrap fails; continue with app startup.
-        console.warn('Seed bootstrap failed, continuing without seed data.', error);
+        console.warn('Mock data cleanup failed, continuing startup.', error);
+        setInitialRouteName('Welcome');
       } finally {
         setIsBootstrapped(true);
       }
@@ -55,8 +84,10 @@ export default function App(): React.JSX.Element {
   return (
     <SafeAreaProvider>
       <NavigationContainer ref={navRef} theme={navTheme} onReady={() => setIsNavReady(true)}>
-        <StatusBar style="dark" />
-        {isBootstrapped ? <AppNavigator /> : null}
+        <AppAlertProvider>
+          <StatusBar style="dark" />
+          {isBootstrapped ? <AppNavigator initialRouteName={initialRouteName} /> : null}
+        </AppAlertProvider>
       </NavigationContainer>
     </SafeAreaProvider>
   );

@@ -7,15 +7,13 @@ import { Card } from '../components/Card';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { SecondaryButton } from '../components/SecondaryButton';
 import { appTheme } from '../design/theme';
-import { appPrefsRepo, userRepo } from '../services/container';
+import { appPrefsRepo } from '../services/container';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SignInNudge'>;
 
 export function SignInNudgeScreen({ navigation, route }: Props): React.JSX.Element {
   const onContinue = async (): Promise<void> => {
-    await userRepo.markSignedIn();
-    await appPrefsRepo.markSignInNudgeDismissed();
-    navigation.goBack();
+    navigation.navigate('Login');
   };
   const onNotNow = async (): Promise<void> => {
     if (route.params?.source === 'auto') await appPrefsRepo.markSignInNudgeDismissed();
@@ -35,6 +33,6 @@ export function SignInNudgeScreen({ navigation, route }: Props): React.JSX.Eleme
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, gap: appTheme.spacing.md },
-  title: { fontSize: appTheme.typography.h2, color: appTheme.colors.textPrimary, fontWeight: '700' },
-  text: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.body },
+  title: { fontSize: appTheme.typography.h2.fontSize, color: appTheme.colors.textPrimary, fontWeight: '700' },
+  text: { color: appTheme.colors.textSecondary, fontSize: appTheme.typography.body.fontSize },
 });

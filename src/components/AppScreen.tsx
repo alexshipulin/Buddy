@@ -12,7 +12,9 @@ import {
   ViewProps,
   ViewStyle,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { layout } from '../design/layout';
+import { spec } from '../design/spec';
 import { appTheme } from '../design/theme';
 
 type Props = ViewProps & {
@@ -45,11 +47,12 @@ export function AppScreen({
   const insets = useSafeAreaInsets();
   const topInset = respectInsets ? insets.top : 0;
   const bottomInset = respectInsets ? insets.bottom : 0;
+  /** When padded=false, only safe area insets (no topContentOffset or screen padding). */
   const paddingStyle: ViewStyle = padded
     ? {
-        paddingHorizontal: appTheme.spacing.md,
-        paddingTop: appTheme.spacing.md + topInset,
-        paddingBottom: appTheme.spacing.md + bottomInset,
+        paddingHorizontal: spec.screenPaddingHorizontal,
+        paddingTop: topInset + layout.topContentOffset,
+        paddingBottom: bottomInset + spec.screenPaddingBottomOffset,
       }
     : { paddingTop: topInset, paddingBottom: bottomInset };
   const backgroundColor = background === 'surface' ? appTheme.colors.surface : appTheme.colors.background;
@@ -89,7 +92,7 @@ export function AppScreen({
     keyboardWrapped
   );
 
-  return <View style={[styles.root, { backgroundColor }, style]}>{wrappedContent}</View>;
+  return <SafeAreaView style={[styles.root, { backgroundColor }, style]}>{wrappedContent}</SafeAreaView>;
 }
 
 const styles = StyleSheet.create({

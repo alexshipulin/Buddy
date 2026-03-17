@@ -30,6 +30,20 @@ This project uses Google Gemini API securely via environment variables.
    npm start
    ```
 
+5. **Optional: stream AI debug logs to local files by scan id (for instant terminal access):**
+   - Start sink server:
+     ```bash
+     npm run ai-debug:sink
+     ```
+   - Set in `.env`:
+     ```
+     EXPO_PUBLIC_AI_DEBUG_LOCAL_SINK_URL=http://127.0.0.1:8787
+     ```
+   - Read full history by scan id:
+     ```bash
+     npm run ai-debug:scan -- 30
+     ```
+
 ## Architecture
 
 - **Centralized AI Service**: All Gemini API calls go through `src/services/aiService.ts`

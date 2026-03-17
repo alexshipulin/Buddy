@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "634839623436",
+    "project_id": "buddy-37f4b",
+    "storage_bucket": "buddy-37f4b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:634839623436:android:a43ced066e32ebaf358b29",
+        "android_client_info": {
+          "package_name": "com.alexshipulin.buddy"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQi-a1yBKYY9bTm64UdM3s2a03ZJUaoPs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

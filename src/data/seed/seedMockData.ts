@@ -29,6 +29,7 @@ export async function seedMockDataIfNeeded(deps: SeedDeps): Promise<void> {
       goal: 'Maintain weight',
       dietaryPreferences: ['Gluten-free'],
       allergies: ['Peanuts'],
+      dislikes: [],
       baseParams: { heightCm: 172, weightKg: 68, activityLevel: 'Medium', age: 29, sex: 'Prefer not to say' },
     });
   }
@@ -62,10 +63,10 @@ export async function seedMockDataIfNeeded(deps: SeedDeps): Promise<void> {
       createdAt: menuTime,
       inputImages: [],
       topPicks: [
-        { name: 'Grilled fish with vegetables', reasonShort: 'Balanced macros and high protein.', tags: ['High protein', 'Balanced'] },
+        { name: 'Grilled fish with vegetables', shortReason: 'Balanced macros and high protein.', pins: ['High protein', 'Balanced', 'Lean protein'], confidencePercent: 85, dietBadges: [], allergenNote: null, noLine: null },
       ],
-      caution: [{ name: 'Pasta carbonara', reasonShort: 'Energy dense, portion matters.', tags: ['Portion control'] }],
-      avoid: [{ name: 'Fried combo set', reasonShort: 'High calories and low satiety.', tags: ['High calories'] }],
+      caution: [{ name: 'Pasta carbonara', shortReason: 'Energy dense, portion matters.', pins: [], riskPins: ['High-calorie', 'Refined Carbs'], quickFix: 'Try: half portion', confidencePercent: 65, dietBadges: [], allergenNote: null, noLine: null }],
+      avoid: [{ name: 'Fried combo set', shortReason: 'High calories and low satiety.', pins: [], riskPins: ['Fried', 'High-calorie'], confidencePercent: 90, dietBadges: [], allergenNote: null, noLine: null }],
       summaryText: 'Sample result for UI preview.',
       disclaimerFlag: true,
     };
