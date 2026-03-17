@@ -110,8 +110,17 @@ const MENU_RAW_SCHEMA = {
 
 function sanitizeParsedResult(parsed: any): MenuRawAnalysis {
   const toBool = (value: unknown): boolean => value === true;
-  const toNumber = (value: unknown): number =>
-    typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  const toNumber = (value: unknown): number => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const normalized = value.replace(',', '.').match(/-?\d+(\.\d+)?/);
+      if (normalized) {
+        const parsedValue = Number(normalized[0]);
+        if (Number.isFinite(parsedValue)) return parsedValue;
+      }
+    }
+    return 0;
+  };
   const toText = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
   const toStringArray = (value: unknown): string[] =>
     Array.isArray(value)
@@ -119,6 +128,10 @@ function sanitizeParsedResult(parsed: any): MenuRawAnalysis {
           .map((item) => (typeof item === 'string' ? item.trim() : ''))
           .filter(Boolean)
       : [];
+  const pickObject = (value: unknown): Record<string, unknown> =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
 
   const dishes: unknown[] = Array.isArray(parsed?.dishes) ? parsed.dishes : [];
   const safeDishes = dishes
@@ -129,46 +142,48 @@ function sanitizeParsedResult(parsed: any): MenuRawAnalysis {
       const rawName = toText(source.name);
       if (!rawName) return null;
 
-      const nutritionRaw =
-        source.nutrition && typeof source.nutrition === 'object' && !Array.isArray(source.nutrition)
-          ? (source.nutrition as Record<string, unknown>)
-          : {};
-      const dietRaw =
-        source.diet_flags && typeof source.diet_flags === 'object' && !Array.isArray(source.diet_flags)
-          ? (source.diet_flags as Record<string, unknown>)
-          : {};
-      const cookingRaw =
-        source.cooking_flags &&
-        typeof source.cooking_flags === 'object' &&
-        !Array.isArray(source.cooking_flags)
-          ? (source.cooking_flags as Record<string, unknown>)
-          : {};
+      const nutritionRaw = pickObject(source.nutrition);
+      const dietRaw = pickObject(source.diet_flags).vegan !== undefined
+        ? pickObject(source.diet_flags)
+        : pickObject(source.dietFlags);
+      const cookingRaw = pickObject(source.cooking_flags).fried !== undefined
+        ? pickObject(source.cooking_flags)
+        : pickObject(source.cookingFlags);
 
       return {
         name: rawName,
         nutrition: {
-          caloriesKcal: toNumber(nutritionRaw.caloriesKcal),
-          proteinG: toNumber(nutritionRaw.proteinG),
-          carbsG: toNumber(nutritionRaw.carbsG),
-          fatG: toNumber(nutritionRaw.fatG),
+          caloriesKcal: toNumber(
+            nutritionRaw.caloriesKcal ??
+              source.estimatedCalories ??
+              source.estimatedCaloriesKcal ??
+              source.caloriesKcal
+          ),
+          proteinG: toNumber(nutritionRaw.proteinG ?? source.estimatedProteinG ?? source.proteinG),
+          carbsG: toNumber(nutritionRaw.carbsG ?? source.estimatedCarbsG ?? source.carbsG),
+          fatG: toNumber(nutritionRaw.fatG ?? source.estimatedFatG ?? source.fatG),
         },
-        detected_dislikes: toStringArray(source.detected_dislikes),
-        detected_allergies: toStringArray(source.detected_allergies),
+        detected_dislikes: toStringArray(source.detected_dislikes ?? source.detectedDislikes),
+        detected_allergies: toStringArray(source.detected_allergies ?? source.detectedAllergies),
         diet_flags: {
           vegan: toBool(dietRaw.vegan),
           vegetarian: toBool(dietRaw.vegetarian),
-          gluten_free: toBool(dietRaw.gluten_free),
-          lactose_free: toBool(dietRaw.lactose_free),
+          gluten_free: toBool(dietRaw.gluten_free ?? dietRaw.glutenFree),
+          lactose_free: toBool(dietRaw.lactose_free ?? dietRaw.lactoseFree),
           keto: toBool(dietRaw.keto),
           paleo: toBool(dietRaw.paleo),
         },
         cooking_flags: {
           fried: toBool(cookingRaw.fried),
-          high_sugar: toBool(cookingRaw.high_sugar),
-          heavy_sauce: toBool(cookingRaw.heavy_sauce),
+          high_sugar: toBool(cookingRaw.high_sugar ?? cookingRaw.highSugar),
+          heavy_sauce: toBool(cookingRaw.heavy_sauce ?? cookingRaw.heavySauce),
           processed: toBool(cookingRaw.processed),
         },
-        short_description: toText(source.short_description) || 'No description available.',
+        short_description:
+          toText(source.short_description) ||
+          toText(source.shortDescription) ||
+          toText(source.reasonShort) ||
+          'No description available.',
       };
     })
     .filter((dish: RawDish | null): dish is RawDish => Boolean(dish));
@@ -177,8 +192,7 @@ function sanitizeParsedResult(parsed: any): MenuRawAnalysis {
 }
 
 async function requestMenuRawAnalysis(params: {
-  imageBase64: string;
-  mimeType: string;
+  imageParts: Array<{ inlineData: { mimeType: string; data: string } }>;
   userGoal: string;
   userDislikes: string[];
   analysisId?: number;
@@ -186,15 +200,24 @@ async function requestMenuRawAnalysis(params: {
   mode?: MenuRequestMode;
 }): Promise<{ rawText: string; model: string }> {
   const key = requireApiKey();
+  if (!Array.isArray(params.imageParts) || params.imageParts.length === 0) {
+    throw new Error('No menu images were provided for analysis');
+  }
   const mode = params.mode ?? 'normal';
+  const photoNote =
+    params.imageParts.length > 1
+      ? `IMPORTANT: There are ${params.imageParts.length} menu photos. List ALL dishes from ALL photos combined into a single dishes array.`
+      : '';
   const promptLines = [
     'Return ONLY JSON. No markdown. No extra text.',
     '',
     `User goal: ${params.userGoal}`,
     `User dislikes to check specifically: ${params.userDislikes.length > 0 ? params.userDislikes.join(', ') : 'none'}`,
     '',
-    'Analyze the menu photo. For each dish return:',
-    '- include every visible menu item you can confidently read; do not return only a short subset',
+    'IMPORTANT: List EVERY SINGLE dish, item, and beverage visible on the menu — do not skip any.',
+    'Include all sections: starters, mains, sides, desserts, drinks, specials.',
+    'If you are unsure about a dish, still include it with your best estimate.',
+    'For each item return:',
     '- name: exact dish name as written on the menu',
     '- nutrition: estimated caloriesKcal, proteinG, carbsG, fatG (assume standard restaurant portion ~300-400g)',
     '- detected_dislikes: match ONLY from this fixed list: Spicy, Avocado, Coriander, Mushrooms, Onions, Garlic, Olives, Seafood, Mayonnaise, Tomatoes',
@@ -221,12 +244,17 @@ async function requestMenuRawAnalysis(params: {
     promptLines.push(
       '- Prioritize completeness: include all readable items across sections (starters, mains, sides, desserts, drinks).',
       '- If an item is readable but uncertain, include best-effort transcription instead of skipping.',
-      '- Keep each short_description to 8 words max.',
       '- Keep JSON compact (no pretty formatting).'
     );
   }
+  if (photoNote) {
+    promptLines.push('', photoNote);
+  }
   const prompt = promptLines.join('\n');
   const maxOutputTokens = mode === 'strict_json_retry' ? 2600 : mode === 'completeness_retry' ? 3800 : 3200;
+  const lightweightMaxOutputTokens = Math.max(1200, Math.round(maxOutputTokens * 0.7));
+  const imageMimeTypes = params.imageParts.map((part) => part.inlineData.mimeType);
+  const imageBase64TotalLen = params.imageParts.reduce((sum, part) => sum + part.inlineData.data.length, 0);
   logAIDebug({
     level: 'info',
     task: 'menu_scan',
@@ -239,13 +267,13 @@ async function requestMenuRawAnalysis(params: {
       requestMode: mode,
       prompt,
       maxOutputTokens,
+      imagesCount: params.imageParts.length,
+      imageMimeTypes,
+      imageBase64TotalLen,
     },
   });
 
-  const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [
-    { text: prompt },
-    { inlineData: { mimeType: params.mimeType, data: params.imageBase64 } },
-  ];
+  const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [{ text: prompt }, ...params.imageParts];
 
   const body = {
     contents: [
@@ -258,6 +286,7 @@ async function requestMenuRawAnalysis(params: {
       responseSchema: MENU_RAW_SCHEMA,
       temperature: 0.2,
       maxOutputTokens,
+      thinkingConfig: { thinkingBudget: 512 },
     },
   };
 
@@ -266,6 +295,16 @@ async function requestMenuRawAnalysis(params: {
     generationConfig: {
       temperature: 0.2,
       maxOutputTokens,
+      thinkingConfig: { thinkingBudget: 512 },
+    },
+  });
+
+  const buildLightweightBody = (): object => ({
+    contents: [{ parts }],
+    generationConfig: {
+      temperature: 0.2,
+      maxOutputTokens: lightweightMaxOutputTokens,
+      thinkingConfig: { thinkingBudget: 512 },
     },
   });
 
@@ -283,11 +322,13 @@ async function requestMenuRawAnalysis(params: {
             ? 'menu_analysis.completeness_retry'
             : 'menu_analysis',
       rawSchemaVersion: 'v1',
-      mimeType: params.mimeType,
-      base64Len: params.imageBase64.length,
+      imagesCount: params.imageParts.length,
+      imageMimeTypes,
+      base64Len: imageBase64TotalLen,
     },
     supportsPlainFallback: true,
     buildPlainBody,
+    buildLightweightBody,
   });
 
   if (!rawText || !rawText.trim()) {
@@ -548,7 +589,7 @@ function mergeMenuAnalyses(...analyses: MenuRawAnalysis[]): MenuRawAnalysis {
 function shouldRunRetryForCompleteness(firstParsed: {
   analysis: MenuRawAnalysis;
   strategy: string;
-}, model: string, rawTextLen: number): {
+}, model: string): {
   shouldRetry: boolean;
   reason: 'none' | 'recovered_small_result' | 'direct_too_few_items' | 'direct_possible_incomplete';
 } {
@@ -560,22 +601,23 @@ function shouldRunRetryForCompleteness(firstParsed: {
     return { shouldRetry: dishCount < 10, reason: dishCount < 10 ? 'recovered_small_result' : 'none' };
   }
 
+  // For direct JSON, always run one completeness retry pass and merge.
+  // This increases recall for long menus where the first pass is valid but incomplete.
+  if (dishCount >= 4) {
+    return { shouldRetry: true, reason: 'direct_possible_incomplete' };
+  }
+
   // Hard floor: a direct JSON with 1-3 dishes is almost always incomplete menu extraction.
   if (dishCount < 4) {
     return { shouldRetry: true, reason: 'direct_too_few_items' };
   }
 
-  const likelyOutputBound = rawTextLen >= 9000 && dishCount < 24;
-  const likelyPartialList = rawTextLen >= 6000 && dishCount < 18;
-  if (likelyOutputBound || likelyPartialList) {
-    return { shouldRetry: true, reason: 'direct_possible_incomplete' };
-  }
-  return { shouldRetry: false, reason: 'none' };
+  // Unreachable fallback; kept for type completeness.
+  return { shouldRetry: true, reason: 'direct_possible_incomplete' };
 }
 
 export async function analyzeMenuWithGemini(params: {
-  imageBase64: string;
-  mimeType: string;
+  imageParts: Array<{ inlineData: { mimeType: string; data: string } }>;
   userGoal: string;
   userDislikes: string[];
   analysisId?: number;
@@ -587,11 +629,7 @@ export async function analyzeMenuWithGemini(params: {
   });
   const firstParsed = parseMenuAnalysisJson(firstAttempt.rawText);
   if (firstParsed) {
-    const retryDecision = shouldRunRetryForCompleteness(
-      firstParsed,
-      firstAttempt.model,
-      firstAttempt.rawText.length
-    );
+    const retryDecision = shouldRunRetryForCompleteness(firstParsed, firstAttempt.model);
 
     if (firstParsed.strategy !== 'direct') {
       logAIDebug({

@@ -342,7 +342,7 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
     if (photos.length >= maxPhotos) return;
     const granted = await ensureCameraPermission();
     if (!granted) return;
-    const shot = await cameraRef.current?.takePictureAsync({ quality: 0.7 });
+    const shot = await cameraRef.current?.takePictureAsync({ quality: 0.85 });
     if (shot?.uri) setPhotos((p) => [...p, shot.uri].slice(0, maxPhotos));
   };
 
@@ -352,7 +352,7 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
       mediaTypes: ['images'],
       allowsMultipleSelection: true,
       selectionLimit: maxPhotos - photos.length,
-      quality: 0.7,
+      quality: 0.85,
     });
     if (selected.canceled) return;
     setPhotos((p) => [...p, ...selected.assets.map((a) => a.uri)].slice(0, maxPhotos));
