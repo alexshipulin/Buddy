@@ -265,7 +265,7 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
   );
 
   const removePhoto = (uri: string): void => setPhotos((p) => p.filter((i) => i !== uri));
-  const maxPhotos = 5;
+  const maxPhotos = 3;
   const hasCameraPermission = cameraPermission?.granted === true;
   const cameraStatusResolved = cameraPermission != null;
   const ensureCameraPermission = React.useCallback(async (): Promise<boolean> => {
@@ -475,7 +475,7 @@ export function ScanMenuScreen({ navigation }: Props): React.JSX.Element {
   const scanRadius = Math.max(20, Math.round(24 * scale));
   const cornerSize = Math.max(24, Math.round(32 * scale));
   const cornerStroke = Math.max(2, Math.round(3 * scale));
-  const previewSlots = [photos[0] ?? null, photos[1] ?? null];
+  const previewSlots = Array.from({ length: maxPhotos }, (_, index) => photos[index] ?? null);
   const canContinue = photos.length > 0 && !loading;
   const canCapture = hasCameraPermission && photos.length < maxPhotos && !loading;
 

@@ -122,40 +122,35 @@ export class GeminiMenuAnalysisProvider implements MenuAnalysisProvider {
 
       const eatenToday = await computeTodayMacrosUseCase(new Date(), { historyRepo: deps.historyRepo });
 
-      const imageParts = preparedInputs.map((prepared) => ({
-        inlineData: {
-          mimeType: prepared.mimeType,
-          data: prepared.base64,
-        },
-      }));
-      const normalizedDislikes = (user.dislikes ?? [])
-        .map((item) => item.trim().toLowerCase())
-        .filter(Boolean)
-        .sort();
-      const normalizedAllergies = (user.allergies ?? [])
-        .map((item) => item.trim().toLowerCase())
-        .filter(Boolean)
-        .sort();
-      const normalizedDietaryPrefs = (user.dietaryPreferences ?? [])
-        .map((item) => item.trim().toLowerCase())
-        .filter(Boolean)
-        .sort();
-      const imageFingerprints = imageParts.map((part, index) => {
-        const data = part.inlineData.data;
-        const imageHash = hashCacheKey([
-          part.inlineData.mimeType,
-          String(data.length),
-          data,
-        ]);
-        return `img${index}:${part.inlineData.mimeType}:${data.length}:${imageHash}`;
-      });
+      const imagePayloads: Array<{ base64: string; mimeType: string }> = [];
+      for (const prepared of preparedInputs.slice(0, 3)) {
+        if (prepared.base64) {
+          imagePayloads.push({
+            base64: prepared.base64,
+            mimeType: prepared.mimeType || detectMimeType(prepared.imageUri),
+          });
+        }
+      }
+      if (imagePayloads.length === 0) {
+        throw new MenuAnalysisFailedError('Failed to read any image');
+      }
+
       const cacheKey = hashCacheKey([
-        ...imageFingerprints,
+        ...imagePayloads.map(
+          (p, i) => `img${i}:${p.mimeType}:${p.base64.length}:${p.base64.slice(-32)}`
+        ),
         `goal:${user.goal}`,
-        `dislikes:${normalizedDislikes.join(',')}`,
-        `allergies:${normalizedAllergies.join(',')}`,
-        `dietary:${normalizedDietaryPrefs.join(',')}`,
-        'menu_v11_all_sections',
+        `allergies:${(user.allergies ?? [])
+          .map((a) => a.trim().toLowerCase())
+          .filter(Boolean)
+          .sort()
+          .join(',')}`,
+        `dislikes:${(user.dislikes ?? [])
+          .map((d) => d.trim().toLowerCase())
+          .filter(Boolean)
+          .sort()
+          .join(',')}`,
+        'menu_v12_multi',
       ]);
 
       const cachedRawAnalysis = await getCached<Awaited<ReturnType<typeof analyzeMenuWithGemini>>>(cacheKey);
@@ -187,9 +182,10 @@ export class GeminiMenuAnalysisProvider implements MenuAnalysisProvider {
       const mergedRawAnalysis =
         cachedRawAnalysis ??
         (await analyzeMenuWithGemini({
-          imageParts,
+          images: imagePayloads,
           userGoal: user.goal,
           userDislikes: user.dislikes ?? [],
+          selectedAllergies: user.allergies ?? [],
           analysisId: deps.analysisId,
           sessionId: deps.sessionId,
         }));
