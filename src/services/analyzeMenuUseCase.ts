@@ -86,6 +86,8 @@ export async function analyzeMenuUseCase(images: string[], deps: Deps): Promise<
         historyRepo: deps.historyRepo,
         analysisId,
         sessionId,
+        targets,
+        dailyState,
       });
       const resultWithAnalysisId = { ...result, analysisId };
       await deps.historyRepo.saveScanResult(resultWithAnalysisId);

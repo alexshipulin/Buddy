@@ -44,8 +44,15 @@ function qualityMismatch(
   isSmallSide: boolean,
   proteinAlmostDone: boolean,
   isEvening: boolean,
-  firstMealFlex: boolean
+  firstMealFlex: boolean,
+  loseFatCalThreshold: number,
+  eatHealthierCalThreshold: number
 ): string | null {
+  // Guard: if nutrition data is missing or incomplete, skip quality checks
+  if (!dish.nutrition || dish.nutrition.caloriesKcal == null) {
+    return null;
+  }
+
   const flags: Partial<RawDish['cooking_flags']> = dish.cooking_flags ?? {};
   const nut = dish.nutrition ?? { caloriesKcal: 0, proteinG: 0, carbsG: 0, fatG: 0 };
 
@@ -62,7 +69,7 @@ function qualityMismatch(
 
     case 'Lose fat':
       // High calorie items always caution
-      if (nut.caloriesKcal > 650) return 'High calorie for fat loss goal';
+      if (nut.caloriesKcal > loseFatCalThreshold) return 'High calorie for fat loss goal';
       // Fried
       if (flags.fried) return 'Fried option — high in fat and calories';
       // High sugar / desserts
@@ -76,6 +83,7 @@ function qualityMismatch(
       if (nut.caloriesKcal > 750) return 'Large meal — balance with lighter choices';
       // Fried
       if (flags.fried) return 'Fried option — enjoy occasionally';
+      if (flags.processed && nut.proteinG < 30) return 'Processed food — occasional treat only';
       // High sugar
       if (flags.high_sugar) return 'High sugar — occasional treat';
       return null;
@@ -89,6 +97,8 @@ function qualityMismatch(
       if (flags.high_sugar) return 'High sugar content';
       // Heavy sauce
       if (flags.heavy_sauce) return 'Heavy sauce — consider lighter option';
+      if (nut.caloriesKcal > eatHealthierCalThreshold)
+        return 'Quite large for a balanced eating goal';
       return null;
 
     default:
@@ -173,9 +183,9 @@ export function classifyDishes(
     }
 
     // Step 3.5: CAUTION — quality mismatch for goal
-    const fatOverTolerance = Boolean(dailyTargets) && eatenToday.fatG > dailyTargets.fatG * 1.4;
+    const fatOverTolerance = dailyTargets ? eatenToday.fatG > dailyTargets.fatG * 1.4 : false;
     const isSmallSide = dish.nutrition.caloriesKcal < 250 && dish.nutrition.fatG < 20;
-    const proteinAlmostDone = Boolean(dailyTargets) && eatenToday.proteinG >= 0.9 * dailyTargets.proteinG;
+    const proteinAlmostDone = dailyTargets ? eatenToday.proteinG >= 0.8 * dailyTargets.proteinG : false;
     const isEvening = mealPeriod === 'dinner';
     const firstMealFlex =
       mealPeriod === 'breakfast' &&
@@ -183,6 +193,20 @@ export function classifyDishes(
       eatenToday.proteinG === 0 &&
       eatenToday.carbsG === 0 &&
       eatenToday.fatG === 0;
+    const remaining = dailyTargets
+      ? {
+          caloriesKcal: dailyTargets.caloriesKcal - eatenToday.caloriesKcal,
+          carbsG: dailyTargets.carbsG - eatenToday.carbsG,
+          fatG: dailyTargets.fatG - eatenToday.fatG,
+          proteinG: dailyTargets.proteinG - eatenToday.proteinG,
+        }
+      : null;
+    const loseFatCalThreshold = remaining
+      ? Math.min(Math.round(remaining.caloriesKcal * 0.55), 600)
+      : 600;
+    const eatHealthierCalThreshold = dailyTargets
+      ? Math.min(Math.round(dailyTargets.caloriesKcal * 0.35), 850)
+      : 800;
 
     const qualityIssue = qualityMismatch(
       dish,
@@ -191,7 +215,9 @@ export function classifyDishes(
       isSmallSide,
       proteinAlmostDone,
       isEvening,
-      firstMealFlex
+      firstMealFlex,
+      loseFatCalThreshold,
+      eatHealthierCalThreshold
     );
     if (qualityIssue) {
       caution.push(mapDish(dish, 'caution', user, qualityIssue));

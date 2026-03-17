@@ -1,9 +1,8 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
-import { Alert, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { RootStackParamList } from '../app/navigation/types';
-import { TEST_MODE } from '../config/flags';
 import { MealEntry } from '../domain/models';
 import { analyzeMealPhoto } from '../services/aiService';
 import { addMealUseCase } from '../services/addMealUseCase';
@@ -68,15 +67,19 @@ export function TrackMealScreen({ navigation, route }: Props): React.JSX.Element
   })(); }, [route.params?.mealId]);
   const saveMeal = async (source: 'photo' | 'text'): Promise<void> => {
     setSaving(true);
-    const title = titleInput.trim() || 'Meal';
+    const manualTitle = titleInput.trim();
+    let title = manualTitle || 'Meal';
     const mealId = createId('meal');
     let macros = toStableMacros(`${title}-${descriptionInput}-${source}`);
     let notes = source === 'text' ? normalizeLine(descriptionInput) ?? undefined : undefined;
 
-    if (source === 'photo' && imageUri && TEST_MODE) {
+    if (source === 'photo' && imageUri) {
       try {
         const analysis = await analyzeMealPhoto(imageUri);
         macros = analysis.macros;
+        if (!manualTitle) {
+          title = analysis.title;
+        }
         notes = normalizeLine(analysis.description) ?? undefined;
       } catch (error) {
         console.warn('AI meal analysis failed, using fallback:', error);
@@ -98,16 +101,16 @@ export function TrackMealScreen({ navigation, route }: Props): React.JSX.Element
         macros,
       }, { historyRepo });
       await chatRepo.addSystemMessageIfMissing(`meal_${mealId}`, `Logged: ${title}. Today updated.`);
-      Alert.alert('Saved');
       setTitleInput('');
       setDescriptionInput('');
       setImageUri(undefined);
+      navigation.replace('TrackMeal', { mealId, readOnly: true });
     } finally {
       setSaving(false);
     }
   };
   return (
-    <Screen keyboardAvoiding={!isReadOnly} scroll={isReadOnly}>
+    <Screen keyboardAvoiding={!isReadOnly} scroll>
       <View style={styles.wrap}>
         <Text style={styles.title}>{isReadOnly ? 'Meal details' : 'Track meal'}</Text>
         {isReadOnly ? (
@@ -217,7 +220,7 @@ export function TrackMealScreen({ navigation, route }: Props): React.JSX.Element
 }
 
 const styles = StyleSheet.create({
-  wrap: { flex: 1, gap: uiTheme.spacing.md },
+  wrap: { width: '100%', gap: uiTheme.spacing.md },
   title: { ...typography.h2 },
   subtitle: { color: uiTheme.colors.textSecondary, fontSize: 17 },
   segmented: { flexDirection: 'row', backgroundColor: '#ECEEF2', borderRadius: uiTheme.radius.sm, padding: 3 },
@@ -226,13 +229,13 @@ const styles = StyleSheet.create({
   segmentText: { color: uiTheme.colors.textSecondary, fontWeight: '600' },
   segmentTextActive: { color: uiTheme.colors.textPrimary, fontWeight: '700' },
   formCard: { gap: uiTheme.spacing.sm },
-  cameraPlaceholder: { minHeight: 280, borderRadius: uiTheme.radius.xl, borderWidth: 2, borderStyle: 'dashed', borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8FAFC', overflow: 'hidden' },
+  cameraPlaceholder: { height: 280, borderRadius: uiTheme.radius.xl, borderWidth: 2, borderStyle: 'dashed', borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8FAFC', overflow: 'hidden' },
   placeholderCenter: { alignItems: 'center', gap: 12 },
   placeholderText: { color: '#9CA3AF', fontSize: 17 },
-  previewImage: { width: '100%', height: '100%' },
+  previewImage: { width: '100%', height: '100%', resizeMode: 'cover' },
   input: { borderWidth: 1, borderColor: uiTheme.colors.border, borderRadius: uiTheme.radius.sm, paddingHorizontal: uiTheme.spacing.sm, paddingVertical: 10, backgroundColor: '#FFFFFF' },
   textArea: { minHeight: 120, borderWidth: 1, borderColor: uiTheme.colors.border, borderRadius: uiTheme.radius.sm, paddingHorizontal: uiTheme.spacing.sm, paddingVertical: 10, textAlignVertical: 'top', backgroundColor: '#FFFFFF' },
-  bottomActions: { marginTop: 'auto', gap: uiTheme.spacing.sm },
+  bottomActions: { marginTop: uiTheme.spacing.sm, gap: uiTheme.spacing.sm },
   cardTitle: { ...typography.h3, color: appTheme.colors.textPrimary },
   infoText: { marginTop: uiTheme.spacing.sm, color: uiTheme.colors.textSecondary, fontSize: 17 },
   detailsCard: { gap: spec.spacing[12] },

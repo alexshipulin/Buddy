@@ -662,9 +662,57 @@ export function rankExtractedDishes(params: RankExtractedParams): RankedBuckets 
     } satisfies RankedDish;
   });
 
+  function nutritionalTiebreaker(a: RankedDish, b: RankedDish, goal: Goal): number {
+    const aP = toNonNegativeInt(a.dish.estimatedProteinG);
+    const bP = toNonNegativeInt(b.dish.estimatedProteinG);
+    const aCal = toNonNegativeInt(a.dish.estimatedCalories);
+    const bCal = toNonNegativeInt(b.dish.estimatedCalories);
+
+    if (goal === 'Gain muscle') {
+      // Protein DESC → Calories DESC
+      if (bP !== aP) return bP - aP;
+      return bCal - aCal;
+    }
+
+    if (goal === 'Lose fat') {
+      // Protein DESC → Calories ASC
+      if (bP !== aP) return bP - aP;
+      if (aCal > 0 && bCal > 0) return aCal - bCal;
+      return 0;
+    }
+
+    if (goal === 'Maintain weight') {
+      // Protein DESC → closest to 550 kcal
+      if (bP !== aP) return bP - aP;
+      const TARGET_KCAL = 550;
+      return Math.abs(aCal - TARGET_KCAL) - Math.abs(bCal - TARGET_KCAL);
+    }
+
+    if (goal === 'Eat healthier') {
+      // Quality flags score DESC → Protein DESC
+      const qualityScore = (d: RankedDish): number => {
+        const f = d.dish.flags ?? {};
+        return (f.wholeFood ? 3 : 0) + (f.veggieForward ? 2 : 0) + (f.leanProtein ? 1 : 0);
+      };
+      const qDiff = qualityScore(b) - qualityScore(a);
+      if (qDiff !== 0) return qDiff;
+      return bP - aP;
+    }
+
+    return 0;
+  }
+
   const sorted = [...ranked].sort((a, b) => {
+    // 1. Score (основной — учитывает белок, качество, pressure)
     if (b.score !== a.score) return b.score - a.score;
-    return (b.dish.confidencePercent ?? 0) - (a.dish.confidencePercent ?? 0);
+    // 2. Confidence
+    const confDiff = (b.dish.confidencePercent ?? 0) - (a.dish.confidencePercent ?? 0);
+    if (confDiff !== 0) return confDiff;
+    // 3. Goal-specific nutritional tiebreaker (только для TOP)
+    if (a.section === 'top' && b.section === 'top') {
+      return nutritionalTiebreaker(a, b, context.goal);
+    }
+    return 0;
   });
 
   const sectionAdjusted = sorted;

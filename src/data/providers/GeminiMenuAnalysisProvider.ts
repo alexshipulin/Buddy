@@ -1,14 +1,19 @@
-import { DishPick, MenuScanResult, UserProfile } from '../../domain/models';
+import { MenuScanResult, NutritionTargets, UserProfile } from '../../domain/models';
+import { DailyNutritionState } from '../../domain/dayBudget';
 import { analyzeMenuWithGemini, MenuAnalysisInvalidJsonError } from '../../ai/menuAnalysis';
 import { prepareImageForVision } from '../../services/aiService';
-import { classifyDishes } from '../../services/classifyDishes';
-import { computeTodayMacrosUseCase } from '../../services/computeTodayMacrosUseCase';
+import { rawDishToExtracted } from '../../services/rawDishAdapter';
 import { createId } from '../../utils/id';
 import { HistoryRepo } from '../repos/HistoryRepo';
 import { MenuAnalysisProvider } from './MenuAnalysisProvider';
 import { logAIDebug } from '../../ai/aiDebugLog';
 import { AllModelsRateLimitedError } from '../../ai/geminiClient';
 import { getCached, hashCacheKey, setCache, TTL_24H } from '../../ai/aiCache';
+import {
+  buildFallbackTargets,
+  rankExtractedDishes,
+  rankedDishToDishPick,
+} from '../../domain/recommendationRanking';
 
 function detectMimeType(uri: string): string {
   const lower = uri.toLowerCase();
@@ -26,45 +31,38 @@ export class MenuAnalysisFailedError extends Error {
   }
 }
 
-function toDishPick(
-  section: 'top' | 'caution' | 'avoid',
-  item: { name: string; reasonShort: string; pins: Array<{ label: string }>; contextNote?: string; nutrition?: { caloriesKcal: number; proteinG: number; carbsG: number; fatG: number } }
-): DishPick {
-  const pinLabels = item.pins
-    .map((pin) => (typeof pin.label === 'string' ? pin.label.trim() : ''))
-    .filter(Boolean);
-  const shortReason = item.reasonShort?.trim() || 'No description available.';
-  const nutrition = item.nutrition ?? {
-    caloriesKcal: 0,
-    proteinG: 0,
-    carbsG: 0,
-    fatG: 0,
-  };
+function resolveTargets(goal: UserProfile['goal'], provided?: NutritionTargets): NutritionTargets {
+  if (provided) return provided;
+  return buildFallbackTargets(goal);
+}
 
-  const dish: DishPick & { contextNote?: string } = {
-    name: item.name,
-    shortReason,
-    pins: section === 'top' ? pinLabels.slice(0, 4) : [],
-    riskPins: section === 'top' ? undefined : pinLabels.slice(0, 3),
-    quickFix: null,
-    confidencePercent: 80,
-    dietBadges: [],
-    allergenNote: null,
-    noLine: null,
-    estimatedCalories: nutrition.caloriesKcal,
-    estimatedProteinG: nutrition.proteinG,
-    estimatedCarbsG: nutrition.carbsG,
-    estimatedFatG: nutrition.fatG,
+function resolveDailyState(provided: DailyNutritionState | undefined, now: Date): DailyNutritionState {
+  if (provided) return provided;
+  return {
+    dateKey: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+      now.getDate()
+    ).padStart(2, '0')}`,
+    consumed: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+    mealsLoggedCount: 0,
+    firstMealTime: null,
+    lastMealTime: null,
+    mealsPerDay: undefined,
+    wholeFoodsMealsCount: 0,
+    processedMealsCount: 0,
   };
-  if (item.contextNote?.trim()) dish.contextNote = item.contextNote.trim();
-  return dish;
 }
 
 export class GeminiMenuAnalysisProvider implements MenuAnalysisProvider {
   async analyzeMenu(
     images: string[],
     user: UserProfile,
-    deps: { historyRepo: HistoryRepo; analysisId?: number; sessionId?: string }
+    deps: {
+      historyRepo: HistoryRepo;
+      analysisId?: number;
+      sessionId?: string;
+      targets?: NutritionTargets;
+      dailyState?: DailyNutritionState;
+    }
   ): Promise<MenuScanResult> {
     if (images.length === 0) {
       throw new MenuAnalysisFailedError('No images provided');
@@ -119,8 +117,6 @@ export class GeminiMenuAnalysisProvider implements MenuAnalysisProvider {
           dislikesCount: (user.dislikes ?? []).length,
         },
       });
-
-      const eatenToday = await computeTodayMacrosUseCase(new Date(), { historyRepo: deps.historyRepo });
 
       const imagePayloads: Array<{ base64: string; mimeType: string }> = [];
       for (const prepared of preparedInputs.slice(0, 3)) {
@@ -223,17 +219,33 @@ export class GeminiMenuAnalysisProvider implements MenuAnalysisProvider {
         }
       }
 
-      const classified = classifyDishes(mergedRawAnalysis.dishes, user, eatenToday, new Date());
+      const extractedDishes = mergedRawAnalysis.dishes.map(rawDishToExtracted);
+      const now = new Date();
+      const targets = resolveTargets(user.goal, deps.targets);
+      const dailyState = resolveDailyState(deps.dailyState, now);
+      const ranked = rankExtractedDishes({
+        dishes: extractedDishes,
+        goal: user.goal,
+        targets,
+        dailyState,
+        selectedAllergies: user.allergies ?? [],
+        selectedDislikes: user.dislikes ?? [],
+        now,
+      });
 
-      const summaryText = `Buddy ranked ${mergedRawAnalysis.dishes.length} dishes for ${user.goal.toLowerCase()} and your preferences.`;
-      const topPicks = classified.topPicks.map((item) => toDishPick('top', item));
-      const caution = classified.caution.map((item) => toDishPick('caution', item));
-      const avoid = classified.avoid.map((item) => toDishPick('avoid', item));
+      const summaryText = `Buddy ranked ${extractedDishes.length} dishes for ${user.goal.toLowerCase()} and your preferences.`;
+      const topPicks = ranked.top.map((item) => rankedDishToDishPick(item, user.allergies ?? []));
+      const caution = ranked.caution.map((item) =>
+        rankedDishToDishPick(item, user.allergies ?? [])
+      );
+      const avoid = ranked.avoid.map((item) => rankedDishToDishPick(item, user.allergies ?? []));
 
       return {
         id: createId('scan'),
         createdAt: new Date().toISOString(),
         inputImages: images,
+        extractedDishes,
+        recommendationVersion: 2,
         topPicks,
         caution,
         avoid,

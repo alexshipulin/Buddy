@@ -2,5 +2,6 @@ node_modules
 .env
 .env.local
 .env.*.local
+.expo/
 .tmp/ai_debug_local_sink
 .tmp/ai_debug_firestore_reader.json

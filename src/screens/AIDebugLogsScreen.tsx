@@ -3,7 +3,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import React from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   Share,
@@ -22,6 +21,7 @@ import {
 import { ScreenHeader } from '../components/ScreenHeader';
 import { Card } from '../ui/components/Card';
 import { Screen } from '../ui/components/Screen';
+import { useAppAlert } from '../ui/components/AppAlertProvider';
 import { appTheme } from '../design/theme';
 import { spec } from '../design/spec';
 import { typography } from '../ui/typography';
@@ -30,6 +30,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'AIDebugLogs'>;
 const REPORT_LIMIT = 1200;
 
 export function AIDebugLogsScreen({ navigation }: Props): React.JSX.Element {
+  const { showAlert } = useAppAlert();
   const [loading, setLoading] = React.useState(true);
   const [report, setReport] = React.useState('');
   const [count, setCount] = React.useState(0);
@@ -67,7 +68,10 @@ export function AIDebugLogsScreen({ navigation }: Props): React.JSX.Element {
     const parsed = Number(analysisIdInput.trim());
     const analysisId = Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0;
     if (analysisId <= 0) {
-      Alert.alert('Invalid scan ID', 'Enter a valid numeric scan ID.');
+      await showAlert({
+        title: 'Invalid scan ID',
+        message: 'Enter a valid numeric scan ID.',
+      });
       return;
     }
 
@@ -76,8 +80,11 @@ export function AIDebugLogsScreen({ navigation }: Props): React.JSX.Element {
       await Share.share({ message: reportById, title: `AI debug report #${analysisId}` });
       return;
     }
-    Alert.alert('No logs for this ID', `No saved logs found for scan #${analysisId}.`);
-  }, [analysisIdInput]);
+    await showAlert({
+      title: 'No logs for this ID',
+      message: `No saved logs found for scan #${analysisId}.`,
+    });
+  }, [analysisIdInput, showAlert]);
 
   return (
     <Screen safeTop={false}>

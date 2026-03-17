@@ -2,7 +2,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Clipboard from 'expo-clipboard';
 import React from 'react';
-import { ActionSheetIOS, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RootStackParamList } from '../app/navigation/types';
 import {
@@ -24,6 +24,7 @@ import { Card } from '../ui/components/Card';
 import { Chip as UiChip } from '../ui/components/Chip';
 import { MacroBar } from '../ui/components/MacroBar';
 import { Screen } from '../ui/components/Screen';
+import { useAppAlert } from '../ui/components/AppAlertProvider';
 import { appTheme } from '../design/theme';
 import { spec } from '../design/spec';
 import { typography } from '../ui/typography';
@@ -38,18 +39,6 @@ function getContextNote(item: DishPick): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function getContextNoteColor(contextNote: string): string {
-  const lower = contextNote.toLowerCase();
-  if (
-    lower.includes('great') ||
-    contextNote.includes('Helps') ||
-    lower.includes('need more protein')
-  ) {
-    return appTheme.colors.success;
-  }
-  return appTheme.colors.warning;
 }
 
 function formatNumber(value: number | null | undefined): string {
@@ -254,18 +243,21 @@ function DishRow({
 }: {
   item: DishRecommendation;
 }): React.JSX.Element {
+  const nutrition = item.nutrition ?? {
+    caloriesKcal: 0,
+    proteinG: 0,
+    carbsG: 0,
+    fatG: 0,
+  };
   return (
     <Card style={styles.dishCard}>
       <Text style={styles.dishName}>{item.name}</Text>
       <Text style={styles.reason}>{item.reasonShort}</Text>
-      {item.contextNote ? (
-        <Text style={styles.contextNote}>{item.contextNote}</Text>
-      ) : null}
       <MacroBar
-        calories={item.nutrition.caloriesKcal}
-        proteinG={item.nutrition.proteinG}
-        carbsG={item.nutrition.carbsG}
-        fatG={item.nutrition.fatG}
+        calories={nutrition.caloriesKcal}
+        proteinG={nutrition.proteinG}
+        carbsG={nutrition.carbsG}
+        fatG={nutrition.fatG}
       />
       <View style={styles.pins}>
         {item.pins.slice(0, 4).map((pin) => (
@@ -276,6 +268,9 @@ function DishRow({
           />
         ))}
       </View>
+      {item.contextNote ? (
+        <Text style={styles.contextNote}>{item.contextNote}</Text>
+      ) : null}
     </Card>
   );
 }
@@ -297,11 +292,6 @@ function TopPickCard({
     <Card style={styles.topPickCard}>
       <Text style={styles.dishName} numberOfLines={2} maxFontSizeMultiplier={1.2}>{item.name}</Text>
       <Text style={styles.reason} numberOfLines={2} maxFontSizeMultiplier={1.2}>{item.shortReason}</Text>
-      {contextNote ? (
-        <Text style={[styles.contextNote, { color: getContextNoteColor(contextNote) }]} numberOfLines={2} maxFontSizeMultiplier={1.2}>
-          {contextNote}
-        </Text>
-      ) : null}
       <MacroBar
         calories={item.estimatedCalories}
         proteinG={item.estimatedProteinG}
@@ -332,6 +322,11 @@ function TopPickCard({
       {item.noLine != null && (
         <Text style={styles.extraLine} maxFontSizeMultiplier={1.2}>{item.noLine}</Text>
       )}
+      {contextNote ? (
+        <Text style={styles.contextNote} numberOfLines={2} maxFontSizeMultiplier={1.2}>
+          {contextNote}
+        </Text>
+      ) : null}
       <View style={styles.cardActions}>
         <Pressable
           style={({ pressed }) => [styles.takeBtn, pressed && styles.btnPressed]}
@@ -373,11 +368,6 @@ function CautionCard({
         ) : null}
       </View>
       <Text style={styles.compactReason} numberOfLines={2} maxFontSizeMultiplier={1.2}>{item.shortReason}</Text>
-      {contextNote ? (
-        <Text style={[styles.contextNote, { color: getContextNoteColor(contextNote) }]} numberOfLines={2} maxFontSizeMultiplier={1.2}>
-          {contextNote}
-        </Text>
-      ) : null}
       <MacroBar
         calories={item.estimatedCalories}
         proteinG={item.estimatedProteinG}
@@ -391,6 +381,11 @@ function CautionCard({
           ))}
         </View>
       )}
+      {contextNote ? (
+        <Text style={styles.contextNote} numberOfLines={2} maxFontSizeMultiplier={1.2}>
+          {contextNote}
+        </Text>
+      ) : null}
       <View style={styles.cardActions}>
         <Pressable
           style={({ pressed }) => [styles.takeBtn, pressed && styles.btnPressed]}
@@ -423,11 +418,6 @@ function AvoidCard({
     <View style={styles.compactCard}>
       <Text style={styles.compactTitle} numberOfLines={1} maxFontSizeMultiplier={1.2}>{item.name}</Text>
       <Text style={styles.compactReason} numberOfLines={2} maxFontSizeMultiplier={1.2}>{item.shortReason}</Text>
-      {contextNote ? (
-        <Text style={[styles.contextNote, { color: getContextNoteColor(contextNote) }]} numberOfLines={2} maxFontSizeMultiplier={1.2}>
-          {contextNote}
-        </Text>
-      ) : null}
       <MacroBar
         calories={item.estimatedCalories}
         proteinG={item.estimatedProteinG}
@@ -441,6 +431,11 @@ function AvoidCard({
           ))}
         </View>
       )}
+      {contextNote ? (
+        <Text style={styles.contextNote} numberOfLines={2} maxFontSizeMultiplier={1.2}>
+          {contextNote}
+        </Text>
+      ) : null}
       <View style={styles.cardActions}>
         <Pressable
           style={({ pressed }) => [styles.takeBtn, pressed && styles.btnPressed]}
@@ -483,6 +478,7 @@ function SectionTitle({
 }
 
 export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Element {
+  const { showAlert } = useAppAlert();
   const insets = useSafeAreaInsets();
   const [result, setResult] = React.useState<MenuScanResult | null>(null);
   const [paywallHandled, setPaywallHandled] = React.useState(false);
@@ -498,6 +494,9 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
   const topPlaceholderReason = result?.topPlaceholderReason?.trim()
     ? result.topPlaceholderReason.trim()
     : 'You’ve hit your goal for today.';
+  const hasTopPicks = (result?.topPicks.length ?? 0) > 0;
+  const hasCaution = (result?.caution.length ?? 0) > 0;
+  const hasAvoid = (result?.avoid.length ?? 0) > 0;
 
   React.useEffect(() => {
     void (async () => {
@@ -558,29 +557,26 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
     );
     const macroSummary = `${macros.caloriesKcal} kcal | P ${macros.proteinG}g | C ${macros.carbsG}g | F ${macros.fatG}g`;
     await chatRepo.addSystemMessageIfMissing(`meal_${mealId}`, `Logged: ${dish.name}. ${macroSummary}`);
-    Alert.alert('Added', `${dish.name} logged to your day.`);
-  }, []);
+    await showAlert({
+      title: 'Added',
+      message: `${dish.name} logged to your day.`,
+    });
+  }, [showAlert]);
 
   const handleShowQuickFix = React.useCallback((quickFix: string): void => {
     if (!quickFix) return;
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title: 'Suggested change',
-          message: quickFix,
-          options: ['OK'],
-          cancelButtonIndex: 0,
-        },
-        () => {}
-      );
-      return;
-    }
-    Alert.alert('Suggested change', quickFix);
-  }, []);
+    void showAlert({
+      title: 'Suggested change',
+      message: quickFix,
+    });
+  }, [showAlert]);
 
   const handleCopyScanReport = React.useCallback(async (): Promise<void> => {
     if (!result) {
-      Alert.alert('Nothing to copy', 'No scan result is loaded yet.');
+      await showAlert({
+        title: 'Nothing to copy',
+        message: 'No scan result is loaded yet.',
+      });
       return;
     }
 
@@ -598,8 +594,11 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
       userContextLines,
     });
     await Clipboard.setStringAsync(text);
-    Alert.alert('Copied', 'Scan report copied to clipboard.');
-  }, [displayAnalysisId, result, topPlaceholderReason]);
+    await showAlert({
+      title: 'Copied',
+      message: 'Scan report copied to clipboard.',
+    });
+  }, [displayAnalysisId, result, showAlert, topPlaceholderReason]);
 
   const scrollPaddingBottom = insets.bottom + spec.spacing[24];
 
@@ -660,52 +659,47 @@ export function MenuResultsScreen({ navigation, route }: Props): React.JSX.Eleme
             </Card>
           ) : (
             <>
-              <View style={styles.section}>
-                <SectionTitle materialIcon="local-fire-department" iconColor="#EA4545" title="Top picks" />
-                <View style={styles.cardsColumn}>
-                  {result.topPicks.length > 0 ? (
-                    result.topPicks.map((item) => (
+              {hasTopPicks ? (
+                <View style={styles.section}>
+                  <SectionTitle materialIcon="local-fire-department" iconColor="#EA4545" title="Top picks" />
+                  <View style={styles.cardsColumn}>
+                    {result.topPicks.map((item) => (
                       <DishRow
                         key={`t_${item.name}`}
                         item={toDishRecommendation(item, 'top')}
                       />
-                    ))
-                  ) : (
-                    <Card style={styles.topPlaceholderCard}>
-                      <Text style={styles.topPlaceholderTitle} maxFontSizeMultiplier={1.2}>
-                        No top picks for now
-                      </Text>
-                      <Text style={styles.topPlaceholderText} maxFontSizeMultiplier={1.2}>
-                        {topPlaceholderReason}
-                      </Text>
-                    </Card>
-                  )}
+                    ))}
+                  </View>
                 </View>
-              </View>
+              ) : null}
 
-              <View style={[styles.section, styles.sectionMuted]}>
-                <SectionTitle icon="⚠" iconColor={appTheme.colors.warning} title="OK with caution" />
-                <View style={styles.cardsColumn}>
-                  {result.caution.map((item) => (
-                    <DishRow
-                      key={`c_${item.name}`}
-                      item={toDishRecommendation(item, 'caution')}
-                    />
-                  ))}
+              {hasCaution ? (
+                <View style={[styles.section, styles.sectionMuted]}>
+                  <SectionTitle icon="⚠" iconColor={appTheme.colors.warning} title="OK with caution" />
+                  <View style={styles.cardsColumn}>
+                    {result.caution.map((item) => (
+                      <DishRow
+                        key={`c_${item.name}`}
+                        item={toDishRecommendation(item, 'caution')}
+                      />
+                    ))}
+                  </View>
                 </View>
-              </View>
+              ) : null}
 
-              <View style={[styles.section, styles.sectionMutedMore]}>
-                <SectionTitle icon="⊘" iconColor={appTheme.colors.danger} title="Better avoid" />
-                <View style={styles.cardsColumn}>
-                  {result.avoid.map((item) => (
-                    <DishRow
-                      key={`a_${item.name}`}
-                      item={toDishRecommendation(item, 'avoid')}
-                    />
-                  ))}
+              {hasAvoid ? (
+                <View style={[styles.section, styles.sectionMutedMore]}>
+                  <SectionTitle icon="⊘" iconColor={appTheme.colors.danger} title="Better avoid" />
+                  <View style={styles.cardsColumn}>
+                    {result.avoid.map((item) => (
+                      <DishRow
+                        key={`a_${item.name}`}
+                        item={toDishRecommendation(item, 'avoid')}
+                      />
+                    ))}
+                  </View>
                 </View>
-              </View>
+              ) : null}
             </>
           )}
         </ScrollView>
@@ -857,9 +851,8 @@ const styles = StyleSheet.create({
   compactTitle: { ...typography.bodySemibold, color: appTheme.colors.textPrimary, flex: 1 },
   compactReason: { ...typography.caption, color: appTheme.colors.textSecondary },
   contextNote: {
-    color: appTheme.colors.warning,
+    color: appTheme.colors.textSecondary,
     fontSize: appTheme.typography.small.fontSize,
-    fontStyle: 'italic',
   },
   riskPinsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spec.spacing[8] },
   quickFixInfoBtn: {

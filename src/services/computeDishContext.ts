@@ -53,11 +53,6 @@ export function computeDishContext(params: {
     return { contextNote: note, shouldDowngrade };
   }
 
-  // Universal: if fat target already exceeded and dish is high in fat → downgrade
-  if (eatenToday.fatG > dailyTargets.fatG && nut.fatG > 20) {
-    return hardResult('Already over fat goal today — choose lower fat');
-  }
-
   if (goal === 'Lose fat') {
     // Fat over
     if (isOver(eatenToday.fatG, dailyTargets.fatG) && nut.fatG > 15) {
@@ -87,8 +82,11 @@ export function computeDishContext(params: {
   }
 
   if (goal === 'Gain muscle') {
+    const proteinDeficit =
+      dailyTargets.proteinG > 0 &&
+      eatenToday.proteinG < 0.5 * dailyTargets.proteinG;
     // Fat already over target
-    if (isOver(eatenToday.fatG, dailyTargets.fatG) && nut.fatG > 20) {
+    if (isOver(eatenToday.fatG, dailyTargets.fatG) && nut.fatG > 20 && !proteinDeficit) {
       return hardResult('Already over fat goal — pick lower fat option');
     }
     // Calories over

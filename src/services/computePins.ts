@@ -40,20 +40,16 @@ export function computePositivePins(dish: RawDish, goal: Goal): DishPin[] {
     if (!heavy_sauce && !processed) push('Low sodium');
     if (!high_sugar) push('Low sugar');
     if (proteinG >= 20 && carbsG >= 15) push('Filling');
-    if (caloriesKcal < 500 && proteinG >= 15) push('Portion-aware');
     if (vegan || vegetarian) push('Vegetables');
-    if (!heavy_sauce && caloriesKcal < 450) push('Light dressing');
     if (paleo) push('Whole foods');
   } else if (goal === 'Maintain weight') {
     if (proteinG >= 18 && carbsG >= 20 && fatG < 28) push('Balanced');
     if (proteinG >= 22 && fatG < 20) push('Lean protein');
-    if (proteinG >= 18 && proteinG < 28) push('Moderate protein');
     if (carbsG >= 35 && !processed) push('Whole grains');
     if (vegan || vegetarian) push('Vegetables');
     if ((vegan || paleo) && carbsG >= 20) push('High fiber');
     if (!heavy_sauce && !processed) push('Low sodium');
     if (fatG >= 10 && fatG < 28 && !fried) push('Healthy fats');
-    if (caloriesKcal < 500 && proteinG >= 15) push('Portion-aware');
     if (paleo) push('Whole foods');
   } else if (goal === 'Gain muscle') {
     if (proteinG >= 28) push('High protein');
@@ -61,8 +57,7 @@ export function computePositivePins(dish: RawDish, goal: Goal): DishPin[] {
     if (caloriesKcal >= 450) push('Enough calories');
     if (proteinG >= 18 && carbsG >= 20 && fatG < 28) push('Balanced');
     if (fatG >= 10 && fatG < 28 && !fried) push('Healthy fats');
-    if (carbsG >= 30) push('Carbs included');
-    if (proteinG >= 20 && caloriesKcal < 600) push('Nutrient-rich');
+    if (carbsG >= 30 && !high_sugar && !processed) push('Carbs included');
     if (paleo) push('Whole foods');
   } else if (goal === 'Eat healthier') {
     if (paleo) push('Whole foods');
@@ -72,7 +67,6 @@ export function computePositivePins(dish: RawDish, goal: Goal): DishPin[] {
     if (!high_sugar) push('Low sugar');
     if (fatG >= 10 && fatG < 28 && !fried) push('Healthy fats');
     if (proteinG >= 18 && carbsG >= 20 && fatG < 28) push('Balanced');
-    if (proteinG >= 20 && caloriesKcal < 600) push('Nutrient-rich');
     if (!fried && !heavy_sauce && caloriesKcal < 550) push('Grilled/steamed');
   }
 
@@ -82,7 +76,13 @@ export function computePositivePins(dish: RawDish, goal: Goal): DishPin[] {
   void keto;
 
   if (pins.length === 0) {
-    return [{ label: 'Balanced', variant: 'positive' }];
+    const fallbackByGoal: Record<Goal, string> = {
+      'Lose fat': 'Low-calorie',
+      'Maintain weight': 'Balanced',
+      'Gain muscle': 'Balanced',
+      'Eat healthier': 'Whole foods',
+    };
+    return [{ label: fallbackByGoal[goal] ?? 'Balanced', variant: 'positive' }];
   }
   return pins.slice(0, 4);
 }
@@ -109,6 +109,7 @@ export function computeRiskPins(dish: RawDish, user: UserProfile): DishPin[] {
         };
   const detectedAllergies = Array.isArray(dish?.detected_allergies) ? dish.detected_allergies : [];
   const detectedDislikes = Array.isArray(dish?.detected_dislikes) ? dish.detected_dislikes : [];
+  const flags = diet;
 
   const { caloriesKcal, proteinG, carbsG, fatG } = nutrition;
   const { fried, high_sugar, heavy_sauce, processed } = cooking;
@@ -155,11 +156,18 @@ export function computeRiskPins(dish: RawDish, user: UserProfile): DishPin[] {
       push('Processed');
       break;
     }
+    if (pref === 'Pescatarian' && !flags.vegetarian && !flags.vegan) {
+      pins.push({ label: 'Not Pescatarian-friendly', variant: 'risk' });
+      break;
+    }
+    if (pref === 'Semi-vegetarian' && !flags.vegetarian && !flags.vegan) {
+      pins.push({ label: 'Contains meat', variant: 'risk' });
+      break;
+    }
   }
 
   // Step 2: goal-specific pins (Gain muscle only).
   if (user.goal === 'Gain muscle') {
-    if (proteinG < 18) push('Very Low Protein');
     if (proteinG < 25) push('Low Protein');
     if (caloriesKcal < 350) push('Small portion');
     if (carbsG < 20) push('No Carbs');
@@ -170,13 +178,11 @@ export function computeRiskPins(dish: RawDish, user: UserProfile): DishPin[] {
   if (high_sugar) push('High sugar');
   if (heavy_sauce) push('Heavy sauce');
   if (caloriesKcal >= 650) push('High-calorie');
-  if (fatG >= 38) push('High sat fat');
   if (fatG >= 30) push('High fat');
   if (carbsG >= 65) push('High carbs');
   if (carbsG >= 55 && processed) push('Refined Carbs');
   if (processed && fried) push('Ultra-processed');
   if (processed) push('Processed');
-  if (heavy_sauce || processed) push('High sodium');
   if (!vegan && !paleo && carbsG < 15) push('Low Fiber');
 
   if (pins.length === 0) {
